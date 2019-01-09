@@ -76,6 +76,26 @@ if(BUILD_CAFFE_PARSER)
 
 endif()
 
+if(BUILD_CAFFE2_PARSER)
+    set(armnn_caffe2_parser_sources)
+    list(APPEND armnn_caffe2_parser_sources
+        include/armnnCaffe2Parser/ICaffe2Parser.hpp
+        src/armnnCaff2Parser/Caffe2Parser.hpp
+        src/armnnCaff2Parser/Caffe2Parser.cpp
+        ${CAFFE2_GENERATED_SOURCES}/caffe2.pb.cc)
+
+    if(COMPILER_IS_GNU_LIKE)
+        set_source_files_properties(${CAFFE_GENERATED_SOURCES}/caffe2.pb.cc PROPERTIES COMPILE_FLAGS "-Wno-conversion -Wno-sign-conversion")
+    endif()
+
+    add_library_ex(armnnCaffe2Parser SHARED ${armnn_caffe2_parser_sources})
+    set_target_properties(armnnCaffe2Parser PROPERTIES COMPILE_FLAGS "${CAFFE2_PARSER_ADDITIONAL_COMPILE_FLAGS}")
+    target_include_directories(armnnCaffe2Parser PRIVATE src/armnnUtils)
+    target_link_libraries(armnnCaffe2Parser ${Boost_LOG_LIBRARY} ${Boost_THREAD_LIBRARY} ${Boost_SYSTEM_LIBRARY})
+    target_link_libraries(armnnCaffe2Parser armnn)
+    target_link_libraries(armnnCaffe2Parser ${PROTOBUF_LIBRARIES})
+endif()
+
 if(BUILD_ONNX_PARSER)
     set(armnn_onnx_parser_sources)
     list(APPEND armnn_onnx_parser_sources
@@ -585,6 +605,9 @@ target_link_libraries(armnn ${CMAKE_DL_LIBS})
 install(TARGETS armnn DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 if(BUILD_CAFFE_PARSER)
     install(TARGETS armnnCaffeParser DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
+endif()
+if(BUILD_CAFFE2_PARSER)
+    install(TARGETS armnnCaffe2Parser DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 endif()
 if(BUILD_ONNX_PARSER)
     install(TARGETS armnnOnnxParser DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)

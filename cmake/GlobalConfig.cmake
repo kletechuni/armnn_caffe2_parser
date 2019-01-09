@@ -1,7 +1,8 @@
 option(BUILD_CAFFE_PARSER "Build Caffe parser" OFF)
+option(BUILD_CAFFE2_PARSER "Build Caffe parser" OFF)
 option(BUILD_TF_PARSER "Build Tensorflow parser" OFF)
 option(BUILD_ONNX_PARSER "Build Onnx parser" OFF)
-option(BUILD_UNIT_TESTS "Build unit tests" ON)
+option(BUILD_UNIT_TESTS "Build unit tests" OFF)
 option(BUILD_TESTS "Build test applications" OFF)
 option(BUILD_FOR_COVERAGE "Use no optimization and output .gcno and .gcda files" OFF)
 option(ARMCOMPUTENEON "Build with ARM Compute NEON support" OFF)
@@ -47,7 +48,7 @@ endif()
 # Compiler flags that are always set
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(COMPILER_IS_GNU_LIKE)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -Wall -Werror -Wold-style-cast -Wno-missing-braces -Wconversion -Wsign-conversion")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -Wall  -Wold-style-cast -Wno-missing-braces -Wno-conversion -Wno-sign-conversion")
 elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc /MP")
     add_definitions(-DNOMINMAX=1 -DNO_STRICT=1)
@@ -111,7 +112,7 @@ link_directories(${Boost_LIBRARY_DIR})
 find_package (Threads)
 
 # Favour the protobuf passed on command line
-if(BUILD_TF_PARSER OR BUILD_CAFFE_PARSER OR BUILD_ONNX_PARSER)
+if(BUILD_TF_PARSER OR BUILD_CAFFE_PARSER OR BUILD_ONNX_PARSER OR BUILD_CAFFE2_PARSER)
     find_library(PROTOBUF_LIBRARY_DEBUG NAMES "protobufd"
         PATHS ${PROTOBUF_ROOT}/lib
         NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
@@ -140,6 +141,17 @@ if(BUILD_CAFFE_PARSER)
     find_path(CAFFE_GENERATED_SOURCES "caffe/proto/caffe.pb.h"
         HINTS ${CAFFE_BUILD_ROOT}/include)
     include_directories(SYSTEM "${CAFFE_GENERATED_SOURCES}")
+endif()
+
+
+
+# Caffe2 and its dependencies
+if(BUILD_CAFFE2_PARSER)
+    add_definitions(-DARMNN_CAFFE2_PARSER)
+
+    find_path(CAFFE2_GENERATED_SOURCES "caffe2.pb.h"
+        HINTS ${CAFFE2_BUILD_ROOT}/include)
+    include_directories(SYSTEM "${CAFFE2_GENERATED_SOURCES}")
 endif()
 
 if(BUILD_TF_PARSER)

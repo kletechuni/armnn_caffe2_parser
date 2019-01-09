@@ -1,0 +1,17 @@
+Determining if the include file valgrind/memcheck.h exists failed with the following output:
+Change Dir: /home/armnn1/armnn-devenv/armnn/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/home/armnn1/armnn-devenv/toolchains/aarch64-android-r16b/bin/make" "cmTC_835fb/fast"
+/home/armnn1/armnn-devenv/toolchains/aarch64-android-r16b/bin/make -f CMakeFiles/cmTC_835fb.dir/build.make CMakeFiles/cmTC_835fb.dir/build
+make[1]: Entering directory `/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_835fb.dir/CheckIncludeFile.c.o
+/home/armnn1/armnn-devenv/toolchains/aarch64-android-r16b/bin/aarch64-linux-android-clang    -fPIE   -o CMakeFiles/cmTC_835fb.dir/CheckIncludeFile.c.o   -c /home/armnn1/armnn-devenv/armnn/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: 'valgrind/memcheck.h' file not found
+#include <valgrind/memcheck.h>
+         ^~~~~~~~~~~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_835fb.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory `/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/CMakeTmp'
+make: *** [cmTC_835fb/fast] Error 2
+
+

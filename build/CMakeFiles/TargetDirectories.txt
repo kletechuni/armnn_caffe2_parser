@@ -1,0 +1,16 @@
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/rebuild_cache.dir
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/install.dir
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/list_install_components.dir
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/AdditionalCMakeFiles.dir
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/edit_cache.dir
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/armnn.dir
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/install/local.dir
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/install/strip.dir
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/armnnUtils.dir
+/home/armnn1/armnn-devenv/armnn/build/CMakeFiles/armnnCaffe2Parser.dir
+/home/armnn1/armnn-devenv/armnn/build/samples/CMakeFiles/install.dir
+/home/armnn1/armnn-devenv/armnn/build/samples/CMakeFiles/list_install_components.dir
+/home/armnn1/armnn-devenv/armnn/build/samples/CMakeFiles/install/strip.dir
+/home/armnn1/armnn-devenv/armnn/build/samples/CMakeFiles/install/local.dir
+/home/armnn1/armnn-devenv/armnn/build/samples/CMakeFiles/rebuild_cache.dir
+/home/armnn1/armnn-devenv/armnn/build/samples/CMakeFiles/edit_cache.dir
