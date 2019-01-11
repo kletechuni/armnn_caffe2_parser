@@ -32,11 +32,8 @@
 #include <queue>
 #include <fcntl.h>
 
-<<<<<<< HEAD
-=======
 #include <iostream>
 
->>>>>>> vinay
 
 
 #include "caffe2.pb.h"
@@ -50,23 +47,6 @@ using namespace std;
 using namespace google::protobuf::io;
 
 
-<<<<<<< HEAD
-const std::map<std::string, Caffe2ParserBase::OperationParsingFunction>
-    Caffe2ParserBase::ms_Caffe2OperatorToParsingFunctions ={{}};
-
-ICaffe2Parser* ICaffe2Parser::Create()
-{
-    return new Caffe2ParserBase();
-}
-
-void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& netDef)
-{
-    //Create a lookup of Caff2 layers by output name
-    for (int i=0;i<netDef.op_size(); ++i)
-    {
-        const caffe2::OperatorDef& op=netDef.op(i);
-        for(int i=0 ; i<op.output_size;++i)
-=======
 // const std::map<std::string, Caffe2ParserBase::OperationParsingFunction>
 //     Caffe2ParserBase::ms_Caffe2OperatorToParsingFunctions = {
 //     { "ReLU",       &Caffe2ParserBase::ParseReluLayer },
@@ -193,7 +173,22 @@ void Caffe2ParserBase::ParseInputLayer()
      IConnectableLayer* const activationLayer = m_Network->AddActivationLayer(activationDescriptor, name.c_str());
      GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(activationLayer->GetInputSlot(0));
       activationLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
-      SetArmnnOutputSlotForCaffe2Output(op.output(0), activationLayer->GetOutputSlot(0));
+      ;SetArmnnOutputSlotForCaffe2Output(op.output(0), activationLayer->GetOutputSlot(0))
+ }
+
+ 
+
+ void Caffe2ParserBase::ParseSoftmaxLayer(const caffe2::OperatorDef& op)
+ {
+     armnn::SoftmaxDescriptor softmaxDescriptor;
+     const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+     
+     const string& name = op.type();
+     IConnectableLayer* const softmaxLayer = m_Network->AddSoftmaxLayer(softmaxDescriptor, name.c_str());
+    GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(softmaxLayer->GetInputSlot(0));
+
+    softmaxLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
+    SetArmnnOutputSlotForCaffe2Output(op.output(0), softmaxLayer->GetOutputSlot(0))
  }
 
 
@@ -208,7 +203,6 @@ void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
         const caffe2::OperatorDef& op=predict.op(i);
         
         for(int i=0 ; i<op.output_size();++i)
->>>>>>> vinay
         {
             m_Caffe2OperatorsByOutputName[op.output(i)]=&op;
 
@@ -217,18 +211,6 @@ void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
     }
 
     std::vector<const caffe2::OperatorDef*> nodes;
-<<<<<<< HEAD
-    for(int i=0;i<netDef.op_size();i++)
-    {
-        nodes.push_back(&netDef.op(i));
-    }
-}
-
-void Caffe2ParserBase::CreateNetworkFromBinaryFile(const char* graphFile)
-{
-    FILE* fd = fopen(graphFile, "rb");
-
-=======
     for(int i=0;i<predict.op_size();i++)
     {
         nodes.push_back(&predict.op(i));
@@ -241,21 +223,11 @@ void Caffe2Parser::CreateNetworkFromBinaryFile(const char* predict_net,const cha
     //reading the predict net
     FILE* fd = fopen(predict_net, "rb");
     
->>>>>>> vinay
     if (fd == nullptr)
     {
         throw FileNotFoundException(
             boost::str(
                 boost::format(
-<<<<<<< HEAD
-                    "Failed to open graph file at: %1% %2%") %
-                    graphFile %
-                    CHECK_LOCATION().AsString()));
-    }
-
-    // Parses the file into a message.
-    NetDef netParam;
-=======
                     "Failed to open predict_net file at: %1% %2%") %
                     predict_net %
                     CHECK_LOCATION().AsString()));
@@ -263,16 +235,11 @@ void Caffe2Parser::CreateNetworkFromBinaryFile(const char* predict_net,const cha
      
     // Parses the file into a message.
     NetDef predict;
->>>>>>> vinay
 
     FileInputStream  inStream(fileno(fd));
     CodedInputStream codedStream(&inStream);
     codedStream.SetTotalBytesLimit(INT_MAX, INT_MAX);
-<<<<<<< HEAD
-    bool success = netParam.ParseFromCodedStream(&codedStream);
-=======
     bool success = predict.ParseFromCodedStream(&codedStream);
->>>>>>> vinay
     fclose(fd);
 
     if (!success)
@@ -280,21 +247,6 @@ void Caffe2Parser::CreateNetworkFromBinaryFile(const char* predict_net,const cha
         throw ParseException(
             boost::str(
                 boost::format(
-<<<<<<< HEAD
-                    "Failed to parse protobuf file: %1% %2%") %
-                    graphFile %
-                    CHECK_LOCATION().AsString()));
-    }
-
-}
-
-
-void Caffe2ParserBase::CreateNetworkFromNetDef(caffe2::NetDef& netDef)
-{
-    m_Network=INetwork::Create();
-    try
-    {
-=======
                     "Failed to parse predict net protobuf file: %1% %2%") %
                     predict_net %
                     CHECK_LOCATION().AsString()));
@@ -351,7 +303,6 @@ void Caffe2ParserBase::CreateNetworkFromNetDef(caffe2::NetDef& init,caffe2::NetD
     try
     {
         LoadNetDef(init,predict);
->>>>>>> vinay
 
     }catch(const ParseException& e)
     {
@@ -360,10 +311,5 @@ void Caffe2ParserBase::CreateNetworkFromNetDef(caffe2::NetDef& init,caffe2::NetD
 
 }
 
-<<<<<<< HEAD
-
-
-=======
->>>>>>> vinay
 }
 
