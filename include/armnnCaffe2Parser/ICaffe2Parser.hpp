@@ -26,8 +26,8 @@ public:
 
 
     /// Create the network from a protobuf binary file on the disk.
-    virtual void CreateNetworkFromBinaryFile(
-        const char* graphFile) = 0;
+    virtual void CreateNetworkFromBinaryFile(const char* predict_net,const char* init_net,
+                const std::map<std::string, armnn::TensorShape>& inputShapes) = 0;
 
    
 /*
