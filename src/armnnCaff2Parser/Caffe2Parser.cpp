@@ -176,7 +176,7 @@ void Caffe2ParserBase::ParseInputLayer()
       ;SetArmnnOutputSlotForCaffe2Output(op.output(0), activationLayer->GetOutputSlot(0))
  }
 
- 
+
 
  void Caffe2ParserBase::ParseSoftmaxLayer(const caffe2::OperatorDef& op)
  {
@@ -190,6 +190,33 @@ void Caffe2ParserBase::ParseInputLayer()
     softmaxLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
     SetArmnnOutputSlotForCaffe2Output(op.output(0), softmaxLayer->GetOutputSlot(0))
  }
+
+ void CaffeParserBase::ParsePoolingLayer(const caffe2::OperatorDef& op)
+{
+    const string& name = op.type();
+    const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+//// get kernel , stride and padding
+
+    unsigned int kernel_h = 
+    unsigned int kernel_w = 
+
+    unsigned int stride_h = 1;
+    unsigned int stride_w = 1;
+
+
+////
+    Pooling2dDescriptor pooling2dDescriptor;
+
+    pooling2dDescriptor.m_PoolType = PoolingAlgorithm::Average;
+
+
+    //// set kernel , stride and padding
+
+
+
+
+
+}
 
 
 
