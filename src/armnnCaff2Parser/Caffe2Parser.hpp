@@ -32,10 +32,12 @@ namespace armnnCaffe2Parser
         void ParseInputLayer();
         void ParseReluLayer(const caffe2::OperatorDef& op);
         void ParseFCLayer(const caffe2::OperatorDef& op);
+        void ParseSoftmaxLayer(const caffe2::OperatorDef& op);
+        void ParsePoolingLayer(const caffe2::OperatorDef& op);
 
 
 
-    
+
     armnn::TensorInfo  ArgumentToTensorInfo(const caffe2::Argument& arg);
     armnn::IOutputSlot& GetArmnnOutputSlotForCaffe2Output(const std::string& caffe2outputName) const;  
     void SetArmnnOutputSlotForCaffe2Output(const std::string& caffe2OutputName, armnn::IOutputSlot& armnnOutputSlot);
@@ -62,7 +64,7 @@ namespace armnnCaffe2Parser
         std::unordered_map<std::string, armnn::IOutputSlot*> m_ArmnnOutputSlotForCaffe2Output;
 
         std::map<std::string, const caffe2::OperatorDef*> blobs;
-
+        
 /*
         /// Retrieves binding info (layer id and tensor info) for the network input identified by the given layer name.
     virtual BindingPointInfo GetNetworkInputBindingInfo(const std::string& name) const override;
