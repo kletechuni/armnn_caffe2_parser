@@ -39,6 +39,19 @@
 #include "caffe2.pb.h"
 
 
+
+namespace
+{
+    const float* GetArrayPtrFromBlob(const caffe2::Argument arg)
+    {
+        BOOST_ASSERT(arg.name()=="values");
+        
+        const float* arrayPtr = arg.floats().data();
+        return arrayPtr;
+    }
+}
+
+
 namespace armnnCaffe2Parser{
 
 using namespace armnn;
@@ -177,6 +190,59 @@ void Caffe2ParserBase::ParseInputLayer()
  }
 
 
+ void Caffe2ParserBase::ParseFCLayer(const caffe2::OperatorDef& op)
+ {
+     FullyConnectedDescriptor tensorFullyConnectedDescriptor;
+     tensorFullyConnectedDescriptor.m_TransposeWeightMatrix=false;
+
+     //the weights name is stored at index 1
+     
+     auto it = blobs.find(op.input(1));
+     if(it == blobs.end())
+     {
+         throw ParseException(
+            boost::str(
+                boost::format(
+                    "Could not find the '%1%' in FC Layer")%
+                    op.input(1).c_str()
+                    ));
+     }
+     const caffe2::OperatorDef& w=*it->second;
+
+     //the biases are stored at the index 2
+    auto it1 = blobs.find(op.input(2));
+     if(it1 == blobs.end())
+     {
+         throw ParseException(
+            boost::str(
+                boost::format(
+                    "Could not find the '%1%' in FC Layer")%
+                    op.input(2).c_str()
+                    ));
+     }
+     const caffe2::OperatorDef& b=*it1->second;
+
+     const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+    //at the index 1 the data is stored
+     const float* weightDataPtr = GetArrayPtrFromBlob(w.arg(1));
+    //at the index 0 the shape info is defined
+     ConstTensor weights(ArgumentToTensorInfo(w.arg(0)), weightDataPtr);
+
+     tensorFullyConnectedDescriptor.m_BiasEnabled = true;
+
+     const float* biasDataPtr = GetArrayPtrFromBlob(b.arg(1));
+     ConstTensor biases(ArgumentToTensorInfo(b.arg(0)), biasDataPtr);
+     armnn::IConnectableLayer* fullyConnectedLayer = m_Network->AddFullyConnectedLayer(tensorFullyConnectedDescriptor, weights, biases,op.type().c_str());
+     //the output shape = M x shape of bias
+     TensorInfo outputInfo({inputInfo.GetShape()[0],biases.GetNumDimensions()}, DataType::Float32);
+
+     GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(fullyConnectedLayer->GetInputSlot(0));
+     fullyConnectedLayer->GetOutputSlot(0).SetTensorInfo(outputInfo);
+     SetArmnnOutputSlotForCaffe2Output(op.output(0),fullyConnectedLayer->GetOutputSlot(0));
+
+ }
+
+
 
  void Caffe2ParserBase::ParseSoftmaxLayer(const caffe2::OperatorDef& op)
  {
@@ -242,6 +308,14 @@ void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
     {
         nodes.push_back(&predict.op(i));
     }
+
+    //stores the corresponding name and index of blobs in init_net
+    for(int i=0;i<init.op_size();++i)
+    {
+        blobs.insert({init.op(i).output(0),&init.op(i)});
+    }
+
+
     ParseInputLayer();
 }
 
