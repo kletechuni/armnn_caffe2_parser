@@ -32,6 +32,10 @@ namespace armnnCaffe2Parser
         void ParseInputLayer();
         void ParseReluLayer(const caffe2::OperatorDef& op);
         void ParseFCLayer(const caffe2::OperatorDef& op);
+        void ParseConvLayer(const caffe2::OperatorDef& op);
+        void AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& op,
+                                            const armnn::Convolution2dDescriptor convDesc,
+                                            unsigned int kernel);
 
 
 

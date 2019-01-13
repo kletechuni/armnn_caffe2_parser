@@ -40,6 +40,17 @@
 
 
 
+
+
+
+namespace armnnCaffe2Parser{
+
+using namespace armnn;
+using namespace caffe2;
+using namespace std;
+using namespace google::protobuf::io;
+
+
 namespace
 {
     const float* GetArrayPtrFromBlob(const caffe2::Argument arg)
@@ -49,15 +60,36 @@ namespace
         const float* arrayPtr = arg.floats().data();
         return arrayPtr;
     }
+
+    void GetDataFromBlob(const caffe2::Argument arg, std::vector<float>& outData)
+    {
+        BOOST_ASSERT(arg.name()=="values");
+
+        size_t blobSize = boost::numeric_cast<size_t>(arg.floats_size());
+        if (blobSize != outData.size())
+        {
+            throw ParseException(
+                boost::str(
+                    boost::format(
+                        "Data blob  in layer %2% has an unexpected size. "
+                        "Expected %3% elements but got %4% elements. %5%") %
+                        arg.name() %
+                        outData.size() %
+                        blobSize %
+                        CHECK_LOCATION().AsString()));
+        }
+
+        int outSizeInt = boost::numeric_cast<int>(outData.size());
+        for(int i = 0 ; i < outSizeInt; ++i)
+        {
+            outData[static_cast<size_t>(i)] = arg.floats(i);
+        }
+
+    }
+
+
+
 }
-
-
-namespace armnnCaffe2Parser{
-
-using namespace armnn;
-using namespace caffe2;
-using namespace std;
-using namespace google::protobuf::io;
 
 
 // const std::map<std::string, Caffe2ParserBase::OperationParsingFunction>
@@ -244,6 +276,313 @@ void Caffe2ParserBase::ParseInputLayer()
 
 
 
+void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& op,
+                                            const armnn::Convolution2dDescriptor convDesc,
+                                            unsigned int kernel)
+{
+    BOOST_ASSERT(op.type()=="conv");
+    DepthwiseConvolution2dDescriptor desc;
+    desc.m_PadLeft      = convDesc.m_PadLeft;
+    desc.m_PadRight     = convDesc.m_PadRight;
+    desc.m_PadTop       = convDesc.m_PadTop;
+    desc.m_PadBottom    = convDesc.m_PadBottom;
+    desc.m_StrideX      = convDesc.m_StrideX;
+    desc.m_StrideY      = convDesc.m_StrideY;
+    desc.m_BiasEnabled  = convDesc.m_BiasEnabled;
+
+    auto it = blobs.find(op.input(1));
+     if(it == blobs.end())
+     {
+         throw ParseException(
+            boost::str(
+                boost::format(
+                    "Could not find the '%1%' in conv Layer")%
+                    op.input(2).c_str()
+                    ));
+     }
+     const caffe2::OperatorDef& w = *it->second;
+
+     unsigned int numFilters = boost::numeric_cast<unsigned int>(w.arg(0).ints(0));
+
+    const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+
+    caffe2::Argument outputShape;
+    outputShape.set_name("shape");
+    outputShape.add_ints(0);
+    outputShape.set_ints(0, inputInfo.GetShape()[0]);
+    outputShape.add_ints(1);
+    outputShape.set_ints(1, numFilters);
+    outputShape.add_ints(2);
+    outputShape.set_ints(
+        2, (static_cast<int>(
+                static_cast<float>(inputInfo.GetShape()[2] + 2 * desc.m_PadBottom - kernel) /
+                static_cast<float>(desc.m_StrideY)) + 1));
+    outputShape.add_ints(3);
+    outputShape.set_ints(
+        3, (static_cast<int>(
+                static_cast<float>(inputInfo.GetShape()[3] + 2 * desc.m_PadRight - kernel) /
+                static_cast<float>(desc.m_StrideX)) + 1));
+
+     size_t allWeightsSize = boost::numeric_cast<size_t>(w.arg(0).ints(0) * kernel * kernel);
+    vector<float> weightData(allWeightsSize);
+    GetDataFromBlob(w.arg(1), weightData);
+    armnn::IConnectableLayer* returnLayer = nullptr;
+    ConstTensor weights(ArgumentToTensorInfo(w.arg(0)),weightData.data());
+
+    if(desc.m_BiasEnabled)
+    {
+
+        TensorInfo biasInfo ;
+        auto it = blobs.find(op.input(2));
+        if(it == blobs.end())
+        {
+           
+            throw ParseException(
+                boost::str(
+                    boost::format(
+                        "Could not find the '%1%' in conv Layer")%
+                        op.input(2).c_str()
+                        ));
+        }
+        const caffe2::OperatorDef& b = *it->second;
+
+        vector<float> biasData;
+        biasData.resize(boost::numeric_cast<size_t>(outputShape.ints(1)), 1.f);
+        GetDataFromBlob(b.arg(1),biasData);
+        biasInfo = ArgumentToTensorInfo(b.arg(0));
+        ConstTensor biases(biasInfo, biasData.data());
+
+        returnLayer = m_Network->AddDepthwiseConvolution2dLayer(desc, weights, biases, op.type().c_str());
+
+    }
+
+    else
+    {
+        returnLayer = m_Network->AddDepthwiseConvolution2dLayer(desc, weights, op.type().c_str());
+    }
+
+
+    if (!returnLayer)
+    {
+        throw ParseException(
+            boost::str(
+                boost::format(
+                    "Failed to create depthwise convolution layer. "
+                    "Layer=%1% #filters=%2% %3%") %
+                    op.type() %
+                    numFilters %
+                    CHECK_LOCATION().AsString()));
+    }
+
+    armnn::IOutputSlot& inputConnection = GetArmnnOutputSlotForCaffe2Output(op.input(0));
+    inputConnection.Connect(returnLayer->GetInputSlot(0));
+    returnLayer->GetOutputSlot(0).SetTensorInfo(ArgumentToTensorInfo(outputShape));
+    SetArmnnOutputSlotForCaffe2Output(op.output(0),returnLayer->GetOutputSlot(0));
+
+}
+
+
+
+ void Caffe2ParserBase::ParseConvLayer(const caffe2::OperatorDef& op)
+ {
+     BOOST_ASSERT(op.type()=="Conv");
+     //create a map of arg name and arg
+     std::map<std::string, const caffe2::Argument*> args;
+     for(int i=0; i<op.arg_size(); ++i)
+     {
+         args.insert({op.arg(i).name(),&op.arg(i)});
+     }
+     auto it = blobs.find(op.input(1));
+     if(it == blobs.end())
+     {
+         throw ParseException(
+            boost::str(
+                boost::format(
+                    "Could not find the '%1%' in conv Layer")%
+                    op.input(2).c_str()
+                    ));
+     }
+     const caffe2::OperatorDef& w = *it->second;
+
+     unsigned int numFilters = boost::numeric_cast<unsigned int>(w.arg(0).ints(0));
+
+      auto it1 = args.find("group");
+     
+     unsigned int numGroups = 1;
+     if(it1!=args.end())
+     {
+         const caffe2::Argument& a = *it1->second;
+         numGroups = boost::numeric_cast<unsigned int>(a.i());
+     }
+
+     unsigned int kernel = 0;
+     auto it2 = args.find("kernel");
+     if(it2!=args.end())
+     {
+         const caffe2::Argument& a = *it2->second;
+         kernel = boost::numeric_cast<unsigned int>(a.i());
+     }
+
+     unsigned int stride = 1;
+     auto it3 = args.find("stride");
+     if(it3!=args.end())
+     {
+         const caffe2::Argument& a = *it3->second;
+         stride = boost::numeric_cast<unsigned int>(a.i());
+     }
+
+     unsigned int pad = 0;
+     auto it4 = args.find("pad");
+     if(it4!=args.end())
+     {
+         const caffe2::Argument& a = *it4->second;
+         pad = boost::numeric_cast<unsigned int>(a.i());
+     }
+
+     
+     Convolution2dDescriptor convolution2dDescriptor;
+
+     convolution2dDescriptor.m_PadLeft = pad;
+     convolution2dDescriptor.m_PadRight = pad;
+     convolution2dDescriptor.m_PadTop = pad;
+     convolution2dDescriptor.m_PadBottom = pad;
+     convolution2dDescriptor.m_StrideX = stride;
+     convolution2dDescriptor.m_StrideY = stride;
+     convolution2dDescriptor.m_BiasEnabled = op.input_size()==3 ? true : false;
+
+
+    if (numGroups > numFilters)
+    {
+        throw ParseException(
+            boost::str(
+                boost::format(
+                    "Error parsing Convolution: %1%. "
+                    "The 'group'=%2% parameter cannot be larger than the "
+                    "number of filters supplied ='%3%'. %4%") %
+                    op.name() %
+                    numGroups %
+                    numFilters %
+                    CHECK_LOCATION().AsString()));
+    }
+
+    const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+     if (inputInfo.GetNumDimensions() != 4)
+    {
+        throw ParseException(
+            boost::str(
+                boost::format(
+                    "Convolution input shape is expected to have 4 dimensions. "
+                    "%1%'s input has only %2%. %3%") %
+                    op.name() %
+                    inputInfo.GetNumDimensions() %
+                    CHECK_LOCATION().AsString()));
+    }
+
+
+    if (numGroups > 1)
+    {
+        if (numGroups > inputInfo.GetShape()[1])
+        {
+            throw ParseException(
+                boost::str(
+                    boost::format(
+                        "Error parsing Convolution: %1%. "
+                        "The 'group'=%2% parameter cannot be larger than the "
+                        "channel of the input shape=%3% (in NCHW format). %4%") %
+                        op.name() %
+                        numGroups %
+                        inputInfo.GetShape()[1] %
+                        CHECK_LOCATION().AsString()));
+        }
+
+    }
+    else if (numGroups == inputInfo.GetShape()[1])
+        {
+            // we use a depthwise convolution here, because the number of groups equals to the
+            // input channels
+            AddConvLayerWithDepthwiseConv(op, convolution2dDescriptor, kernel);
+            return;
+        }
+
+    caffe2::Argument outputShape;
+    outputShape.set_name("shape");
+    outputShape.add_ints(0);
+    outputShape.set_ints(0,inputInfo.GetShape()[0]);
+    outputShape.add_ints(1);
+    outputShape.set_ints(1,numFilters);
+    outputShape.add_ints(2);
+    outputShape.set_ints(
+        2, (static_cast<int>(static_cast<float>(inputInfo.GetShape()[2]) +  2 * pad - kernel)/
+                            static_cast<float>(stride))+1);
+    outputShape.add_ints(3);
+    outputShape.set_ints(
+        3, (static_cast<int>(static_cast<float>(inputInfo.GetShape()[2]) +  2 * pad - kernel)/
+                            static_cast<float>(stride))+1);
+    
+    vector<float> weightData(boost::numeric_cast<size_t>(w.arg(0).ints(0) *
+                                                        w.arg(0).ints(1) *
+                                                        w.arg(0).ints(2) *
+                                                        w.arg(0).ints(3)));
+    
+    GetDataFromBlob(w.arg(1),weightData);
+
+    armnn::IConnectableLayer* returnLayer = nullptr;
+
+    ConstTensor weights(ArgumentToTensorInfo(w.arg(0)),weightData.data());
+
+    if (convolution2dDescriptor.m_BiasEnabled)
+    {
+         TensorInfo biasInfo ;
+        auto it = blobs.find(op.input(2));
+        if(it == blobs.end())
+        {
+           
+            throw ParseException(
+                boost::str(
+                    boost::format(
+                        "Could not find the '%1%' in conv Layer")%
+                        op.input(2).c_str()
+                        ));
+        }
+        const caffe2::OperatorDef& b = *it->second;
+
+        vector<float> biasData;
+        biasData.resize(boost::numeric_cast<size_t>(outputShape.ints(1)), 1.f);
+        GetDataFromBlob(b.arg(1),biasData);
+        biasInfo = ArgumentToTensorInfo(b.arg(0));
+        ConstTensor biases(biasInfo, biasData.data());
+
+        returnLayer = m_Network->AddConvolution2dLayer(convolution2dDescriptor, weights, biases, op.type().c_str());
+
+    }
+    else
+    {
+        returnLayer = m_Network->AddConvolution2dLayer(convolution2dDescriptor, weights, op.type().c_str());
+    }
+
+    armnn::IOutputSlot& inputConnection = GetArmnnOutputSlotForCaffe2Output(op.input(0));
+    inputConnection.Connect(returnLayer->GetInputSlot(0));
+    returnLayer->GetOutputSlot(0).SetTensorInfo(ArgumentToTensorInfo(outputShape));
+
+    if (!returnLayer)
+    {
+        throw ParseException(
+            boost::str(
+                boost::format(
+                    "Failed to create Convolution layer. "
+                    "Layer=%1% #groups=%2% #filters=%3% %4%") %
+                    op.name() %
+                    numGroups %
+                    numFilters %
+                    CHECK_LOCATION().AsString()));
+    }
+
+    SetArmnnOutputSlotForCaffe2Output(op.output(0), returnLayer->GetOutputSlot(0));
+
+ }
+
+
+
 
 
 void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
@@ -275,6 +614,8 @@ void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
 
 
     ParseInputLayer();
+
+    ParseConvLayer(predict.op(0));
 }
 
 void Caffe2Parser::CreateNetworkFromBinaryFile(const char* predict_net,const char* init_net,const std::map<std::string, armnn::TensorShape>& inputShapes)
@@ -348,17 +689,18 @@ void Caffe2Parser::CreateNetworkFromBinaryFile(const char* predict_net,const cha
 
 
     CreateNetworkFromNetDef(init,predict,inputShapes);
-
 }
-
-
 void Caffe2ParserBase::CreateNetworkFromNetDef(caffe2::NetDef& init,caffe2::NetDef& predict,const std::map<std::string, armnn::TensorShape>& inputShapes)
 {
-     m_NetworkInputsBindingInfo.clear();
 
+
+    m_NetworkInputsBindingInfo.clear();
 
     m_Network=INetwork::Create();
+ 
+  
     m_InputShapes=inputShapes;
+
     try
     {
         LoadNetDef(init,predict);
