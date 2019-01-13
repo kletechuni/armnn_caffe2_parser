@@ -190,6 +190,96 @@ void Caffe2ParserBase::ParseInputLayer()
  }
 
 
+  void Caffe2ParserBase::ParseAvePoolingLayer(const caffe2::OperatorDef& op)
+ {
+    BOOST_ASSERT(op.type()=="AveragePool");
+    
+    const string& name = op.type();
+    const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+
+    std::map<std::string, const caffe2::Argument*> args;
+
+    for (int i=0 ; i<op.arg_size() ;++i)
+    {
+        args.insert({op.arg(i).name(),op.arg(i)});
+        
+    }
+
+    unsigned int kernel_h = 0;
+    auto k = args.find("kernel");
+    if(k!=args.end())
+    {
+        const caffe2::Argument& a = k->second;
+        kernel_h = boost::numeric_cast<unsigned int>(a.i());
+    }
+    unsigned int kernel_w = kernel_h;
+
+    
+    unsigned int stride_h = 1;
+    auto s = args.find("stride");
+    if(s!=args.end())
+    {
+        const caffe2::Argument& a = s->second;
+        stride_h = boost::numeric_cast<unsigned int>(a.i());
+    }
+    unsigned int stride_w = stride_h;
+
+
+
+
+    unsigned int pad_h = 0;
+    auto p = args.find("pad");
+    if(p!=args.end())
+    {
+        const caffe2::Argument& a = p->second;
+        pad_h = boost::numeric_cast<unsigned int>(a.i());
+    }
+    unsigned int pad_w = pad_h
+
+
+
+    Pooling2dDescriptor pooling2dDescriptor;
+    pooling2dDescriptor.m_PoolType = PoolingAlgorithm::Average;
+
+
+
+    pooling2dDescriptor.m_PadLeft     = pad_w;
+    pooling2dDescriptor.m_PadRight    = pad_w;
+    pooling2dDescriptor.m_PadTop      = pad_h;
+    pooling2dDescriptor.m_PadBottom   = pad_h;
+    pooling2dDescriptor.m_StrideX     = stride_w;
+    pooling2dDescriptor.m_StrideY     = stride_h;
+    pooling2dDescriptor.m_PoolWidth   = kernel_w;
+    pooling2dDescriptor.m_PoolHeight  = kernel_h;
+
+    pooling2dDescriptor.m_OutputShapeRounding = OutputShapeRounding::Ceiling;
+    pooling2dDescriptor.m_PaddingMethod  = PaddingMethod::IgnoreValue;
+
+    
+
+    TensorInfo outputInfo(
+        { inputInfo.GetShape()[0],
+          inputInfo.GetShape()[1],
+          static_cast<unsigned int>(ceil(
+              static_cast<float>(inputInfo.GetShape()[2] + 2 * pad_h - kernel_h) /
+              boost::numeric_cast<float>(stride_h))) + 1,
+          static_cast<unsigned int>(ceil(
+              static_cast<float>(inputInfo.GetShape()[3] + 2 * pad_w - kernel_w) /
+              boost::numeric_cast<float>(stride_w))) + 1 },
+        DataType::Float32);
+
+    
+    armnn::IConnectableLayer* poolingLayer = m_Network->AddPooling2dLayer(pooling2dDescriptor,
+        name.c_str());
+    GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(poolingLayer->GetInputSlot(0));
+    SetArmnnOutputSlotForCaffe2Output(op.output(0), poolingLayer->GetOutputSlot(0));
+
+
+
+
+ }
+
+
  void Caffe2ParserBase::ParseFCLayer(const caffe2::OperatorDef& op)
  {
      FullyConnectedDescriptor tensorFullyConnectedDescriptor;
@@ -288,6 +378,10 @@ void Caffe2ParserBase::ParseInputLayer()
 
 
 
+
+
+
+
 void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
 {
     //Create a lookup of Caff2 layers by output name
@@ -364,7 +458,7 @@ void Caffe2Parser::CreateNetworkFromBinaryFile(const char* predict_net,const cha
         throw FileNotFoundException(
             boost::str(
                 boost::format(
-                    "Failed to open init_net file at: %1% %2%") %
+                       "Failed to open init_net file at: %1% %2%") %
                     init_net %
                     CHECK_LOCATION().AsString()));
     }
