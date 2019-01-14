@@ -113,6 +113,39 @@ ICaffe2Parser* ICaffe2Parser::Create()
 
 
 
+BindingPointInfo Caffe2ParserBase::GetNetworkInputBindingInfo(const std::string& name) const
+{
+    return GetBindingInfo(name, "data", m_NetworkInputsBindingInfo);
+}
+
+BindingPointInfo Caffe2ParserBase::GetNetworkOutputBindingInfo(const std::string& name) const
+{
+    return GetBindingInfo(name, "output", m_NetworkOutputsBindingInfo);
+}
+
+
+
+std::pair<armnn::LayerBindingId, armnn::TensorInfo> Caffe2ParserBase::GetBindingInfo(const std::string& layerName,
+    const char* bindingPointDesc,
+    const std::unordered_map<std::string, BindingPointInfo>& nameToBindingInfo)
+{
+    auto it = nameToBindingInfo.find(layerName);
+     if (it == nameToBindingInfo.end())
+    {
+        throw InvalidArgumentException(
+            boost::str(
+                boost::format(
+                    "Unknown binding %1% for layer '%2%'. %3%") %
+                    bindingPointDesc %
+                    layerName %
+                    CHECK_LOCATION().AsString()));
+    }
+    return it->second;
+}
+
+
+
+
 TensorInfo Caffe2ParserBase::ArgumentToTensorInfo(const caffe2::Argument& arg)
 {
     BOOST_ASSERT(arg.name()=="shape");
@@ -190,7 +223,7 @@ armnn::IOutputSlot& Caffe2ParserBase::GetArmnnOutputSlotForCaffe2Output(const st
         throw ParseException(
             boost::str(
                 boost::format(
-                    "Could not find armnn output slot for Caffe top '%1%' %2%") %
+                    "Could not find armnn output slot for Caffe2 output '%1%' %2%") %
                     caffe2OutputName %
                     CHECK_LOCATION().AsString()));
     }
@@ -385,8 +418,11 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
 
  void Caffe2ParserBase::ParseConvLayer(const caffe2::OperatorDef& op)
  {
+
+     
      BOOST_ASSERT(op.type()=="Conv");
      //create a map of arg name and arg
+     
      std::map<std::string, const caffe2::Argument*> args;
      for(int i=0; i<op.arg_size(); ++i)
      {
@@ -414,6 +450,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
          const caffe2::Argument& a = *it1->second;
          numGroups = boost::numeric_cast<unsigned int>(a.i());
      }
+      std::cout<<"group "<<numGroups<<std::endl;
 
      unsigned int kernel = 0;
      auto it2 = args.find("kernel");
@@ -422,6 +459,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
          const caffe2::Argument& a = *it2->second;
          kernel = boost::numeric_cast<unsigned int>(a.i());
      }
+     std::cout<<"kernel "<<kernel<<std::endl;
 
      unsigned int stride = 1;
      auto it3 = args.find("stride");
@@ -431,6 +469,8 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
          stride = boost::numeric_cast<unsigned int>(a.i());
      }
 
+     std::cout<<"stride "<<stride<<std::endl;
+
      unsigned int pad = 0;
      auto it4 = args.find("pad");
      if(it4!=args.end())
@@ -439,7 +479,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
          pad = boost::numeric_cast<unsigned int>(a.i());
      }
 
-     
+     std::cout<<"pad "<<pad<<std::endl;
      Convolution2dDescriptor convolution2dDescriptor;
 
      convolution2dDescriptor.m_PadLeft = pad;
@@ -449,7 +489,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
      convolution2dDescriptor.m_StrideX = stride;
      convolution2dDescriptor.m_StrideY = stride;
      convolution2dDescriptor.m_BiasEnabled = op.input_size()==3 ? true : false;
-
+    
 
     if (numGroups > numFilters)
     {
@@ -465,7 +505,11 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
                     CHECK_LOCATION().AsString()));
     }
 
-    const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+    
+      armnn::IOutputSlot& inputConnection = GetArmnnOutputSlotForCaffe2Output(op.input(0));
+      
+    const TensorInfo& inputInfo = inputConnection.GetTensorInfo();
+   
      if (inputInfo.GetNumDimensions() != 4)
     {
         throw ParseException(
@@ -503,7 +547,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
             AddConvLayerWithDepthwiseConv(op, convolution2dDescriptor, kernel);
             return;
         }
-
+   
     caffe2::Argument outputShape;
     outputShape.set_name("shape");
     outputShape.add_ints(0);
@@ -559,8 +603,8 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
     {
         returnLayer = m_Network->AddConvolution2dLayer(convolution2dDescriptor, weights, op.type().c_str());
     }
-
-    armnn::IOutputSlot& inputConnection = GetArmnnOutputSlotForCaffe2Output(op.input(0));
+   
+  
     inputConnection.Connect(returnLayer->GetInputSlot(0));
     returnLayer->GetOutputSlot(0).SetTensorInfo(ArgumentToTensorInfo(outputShape));
 
@@ -576,13 +620,19 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
                     numFilters %
                     CHECK_LOCATION().AsString()));
     }
-
+    std::cout<<"output "<<op.output(0)<<std::endl;
     SetArmnnOutputSlotForCaffe2Output(op.output(0), returnLayer->GetOutputSlot(0));
 
  }
 
 
 
+void Caffe2ParserBase::TrackOutputBinding(armnn::IConnectableLayer* layer,
+    armnn::LayerBindingId id,
+    const armnn::TensorInfo& tensorInfo)
+{
+    return TrackBindingPoint(layer, id, tensorInfo, layer->GetName(), m_NetworkOutputsBindingInfo);
+}
 
 
 void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
@@ -612,13 +662,27 @@ void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
         blobs.insert({init.op(i).output(0),&init.op(i)});
     }
 
+    this->ParseInputLayer();
+    
+    OperationParsingFunction fun = &Caffe2ParserBase::ParseConvLayer;
+    (this->*fun)(*nodes.at(0));
+  
+    for (const std::string& requestedOutput : m_RequestedOutputs)
+    {
+        armnn::IOutputSlot& outputSlot = GetArmnnOutputSlotForCaffe2Output(requestedOutput);
 
-    ParseInputLayer();
+        const armnn::LayerBindingId outputId = boost::numeric_cast<armnn::LayerBindingId>(
+            m_NetworkOutputsBindingInfo.size());
+        armnn::IConnectableLayer* const outputLayer = m_Network->AddOutputLayer(outputId, requestedOutput.c_str());
+        outputSlot.Connect(outputLayer->GetInputSlot(0));
 
-    ParseConvLayer(predict.op(0));
+        TrackOutputBinding(outputLayer, outputId, outputLayer->GetInputSlot(0).GetConnection()->GetTensorInfo());
+    }
+
 }
 
-void Caffe2Parser::CreateNetworkFromBinaryFile(const char* predict_net,const char* init_net,const std::map<std::string, armnn::TensorShape>& inputShapes)
+armnn::INetworkPtr Caffe2Parser::CreateNetworkFromBinaryFile(const char* predict_net,const char* init_net,const std::map<std::string, armnn::TensorShape>& inputShapes,
+                                                    const std::vector<std::string>& requestedOutputs)
 {
     //reading the predict net
     FILE* fd = fopen(predict_net, "rb");
@@ -688,9 +752,10 @@ void Caffe2Parser::CreateNetworkFromBinaryFile(const char* predict_net,const cha
     }
 
 
-    CreateNetworkFromNetDef(init,predict,inputShapes);
+    return CreateNetworkFromNetDef(init,predict,inputShapes,requestedOutputs);
 }
-void Caffe2ParserBase::CreateNetworkFromNetDef(caffe2::NetDef& init,caffe2::NetDef& predict,const std::map<std::string, armnn::TensorShape>& inputShapes)
+armnn::INetworkPtr Caffe2ParserBase::CreateNetworkFromNetDef(caffe2::NetDef& init,caffe2::NetDef& predict,const std::map<std::string, armnn::TensorShape>& inputShapes,
+                                                const std::vector<std::string>& requestedOutputs)
 {
 
 
@@ -701,6 +766,12 @@ void Caffe2ParserBase::CreateNetworkFromNetDef(caffe2::NetDef& init,caffe2::NetD
   
     m_InputShapes=inputShapes;
 
+    if (requestedOutputs.size() == 0)
+    {
+        throw ParseException("requestedOutputs must have at least one entry");
+    }
+    m_RequestedOutputs = requestedOutputs;
+
     try
     {
         LoadNetDef(init,predict);
@@ -709,6 +780,8 @@ void Caffe2ParserBase::CreateNetworkFromNetDef(caffe2::NetDef& init,caffe2::NetD
     {
         throw e;
     }
+
+    return move(m_Network);
 
 }
 

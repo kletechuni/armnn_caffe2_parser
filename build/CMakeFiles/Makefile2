@@ -169,8 +169,8 @@ clean: CMakeFiles/armnnUtils.dir/clean
 # Target rules for target CMakeFiles/armnnCaffe2Parser.dir
 
 # All Build rule for target.
-CMakeFiles/armnnCaffe2Parser.dir/all: CMakeFiles/armnn.dir/all
 CMakeFiles/armnnCaffe2Parser.dir/all: CMakeFiles/armnnUtils.dir/all
+CMakeFiles/armnnCaffe2Parser.dir/all: CMakeFiles/armnn.dir/all
 	$(MAKE) -f CMakeFiles/armnnCaffe2Parser.dir/build.make CMakeFiles/armnnCaffe2Parser.dir/depend
 	$(MAKE) -f CMakeFiles/armnnCaffe2Parser.dir/build.make CMakeFiles/armnnCaffe2Parser.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/armnn1/armnn-devenv/armnn/build/CMakeFiles --progress-num=94,95 "Built target armnnCaffe2Parser"

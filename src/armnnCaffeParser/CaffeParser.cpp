@@ -435,6 +435,7 @@ void CaffeParserBase::ParseInputLayer(const LayerParameter& layerParam)
                         layerParam.name() %
                         CHECK_LOCATION().AsString()));
         }
+        
         inputTensorInfo.SetShape(overrideShape);
     }
     else if (!originalShape)
