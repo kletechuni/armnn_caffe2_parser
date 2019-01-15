@@ -92,10 +92,15 @@ namespace
 }
 
 
-// const std::map<std::string, Caffe2ParserBase::OperationParsingFunction>
-//     Caffe2ParserBase::ms_Caffe2OperatorToParsingFunctions = {
-//     { "ReLU",       &Caffe2ParserBase::ParseReluLayer },
-//     };
+const std::map<std::string, Caffe2ParserBase::OperationParsingFunction>
+    Caffe2ParserBase::ms_Caffe2OperatorToParsingFunctions = {
+    { "Relu",           &Caffe2ParserBase::ParseReluLayer },
+    { "Conv",           &Caffe2ParserBase::ParseConvLayer},
+    { "AveragePool",    &Caffe2ParserBase::ParseAvePoolingLayer },
+    { "FC",             &Caffe2ParserBase::ParseFCLayer },
+    { "Softmax",        &Caffe2ParserBase::ParseSoftmaxLayer},
+    { "Sum",            &Caffe2ParserBase::ParseSumLayer},
+    };
     
     Caffe2ParserBase::Caffe2ParserBase()
         :m_Network(nullptr,nullptr)
@@ -261,7 +266,7 @@ void Caffe2ParserBase::ParseInputLayer()
  void Caffe2ParserBase::ParseFCLayer(const caffe2::OperatorDef& op)
  {
      FullyConnectedDescriptor tensorFullyConnectedDescriptor;
-     tensorFullyConnectedDescriptor.m_TransposeWeightMatrix=false;
+     tensorFullyConnectedDescriptor.m_TransposeWeightMatrix=true;
 
      //the weights name is stored at index 1
      
@@ -302,11 +307,13 @@ void Caffe2ParserBase::ParseInputLayer()
      ConstTensor biases(ArgumentToTensorInfo(b.arg(0)), biasDataPtr);
      armnn::IConnectableLayer* fullyConnectedLayer = m_Network->AddFullyConnectedLayer(tensorFullyConnectedDescriptor, weights, biases,op.type().c_str());
      //the output shape = M x shape of bias
-     TensorInfo outputInfo({inputInfo.GetShape()[0],biases.GetNumDimensions()}, DataType::Float32);
-
+     unsigned int outputsize = b.arg(1).floats_size();
+     TensorInfo outputInfo({inputInfo.GetShape()[0],outputsize}, DataType::Float32);
      GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(fullyConnectedLayer->GetInputSlot(0));
      fullyConnectedLayer->GetOutputSlot(0).SetTensorInfo(outputInfo);
      SetArmnnOutputSlotForCaffe2Output(op.output(0),fullyConnectedLayer->GetOutputSlot(0));
+
+     std::cout<<outputInfo.GetShape()[0]<<"\t"<<outputInfo.GetShape()[1]<<"\n";
 
  }
 
@@ -316,6 +323,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
                                             const armnn::Convolution2dDescriptor convDesc,
                                             unsigned int kernel)
 {
+   
     BOOST_ASSERT(op.type()=="conv");
     DepthwiseConvolution2dDescriptor desc;
     desc.m_PadLeft      = convDesc.m_PadLeft;
@@ -414,15 +422,14 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
     inputConnection.Connect(returnLayer->GetInputSlot(0));
     returnLayer->GetOutputSlot(0).SetTensorInfo(ArgumentToTensorInfo(outputShape));
     SetArmnnOutputSlotForCaffe2Output(op.output(0),returnLayer->GetOutputSlot(0));
+     std::cout<<outputShape.ints(0)<<"\t"<<outputShape.ints(1)<<"\t"<<outputShape.ints(2)<<"\t"<<outputShape.ints(3)<<"\n";
 
 }
 
 
 
  void Caffe2ParserBase::ParseConvLayer(const caffe2::OperatorDef& op)
- {
-
-     
+ {    
      BOOST_ASSERT(op.type()=="Conv");
      //create a map of arg name and arg
      
@@ -512,7 +519,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
       armnn::IOutputSlot& inputConnection = GetArmnnOutputSlotForCaffe2Output(op.input(0));
       
     const TensorInfo& inputInfo = inputConnection.GetTensorInfo();
-   
+  
      if (inputInfo.GetNumDimensions() != 4)
     {
         throw ParseException(
@@ -541,15 +548,18 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
                         inputInfo.GetShape()[1] %
                         CHECK_LOCATION().AsString()));
         }
-
-    }
-    else if (numGroups == inputInfo.GetShape()[1])
+        else if (numGroups == inputInfo.GetShape()[1])
         {
+             
             // we use a depthwise convolution here, because the number of groups equals to the
             // input channels
             AddConvLayerWithDepthwiseConv(op, convolution2dDescriptor, kernel);
             return;
+             
         }
+
+    }
+    
    
     caffe2::Argument outputShape;
     outputShape.set_name("shape");
@@ -625,9 +635,128 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
     }
     std::cout<<"output "<<op.output(0)<<std::endl;
     SetArmnnOutputSlotForCaffe2Output(op.output(0), returnLayer->GetOutputSlot(0));
+    std::cout<<outputShape.ints(0)<<"\t"<<outputShape.ints(1)<<"\t"<<outputShape.ints(2)<<"\t"<<outputShape.ints(3)<<"\n";
+ }
+
+
+
+
+
+void Caffe2ParserBase::ParseAvePoolingLayer(const caffe2::OperatorDef& op)
+{
+    BOOST_ASSERT(op.type()=="AveragePool");
+    
+    const string& name = op.type();
+    const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+
+    std::map<std::string, const caffe2::Argument*> args;
+
+    for (int i=0 ; i<op.arg_size() ;++i)
+    {
+        args.insert({op.arg(i).name(),&op.arg(i)});
+        
+    }
+
+    unsigned int kernel_h = 0;
+    auto k = args.find("kernel");
+    if(k!=args.end())
+    {
+        const caffe2::Argument& a = *k->second;
+        kernel_h = boost::numeric_cast<unsigned int>(a.i());
+    }
+    unsigned int kernel_w = kernel_h;
+
+    
+    unsigned int stride_h = 1;
+    auto s = args.find("stride");
+    if(s!=args.end())
+    {
+        const caffe2::Argument& a = *s->second;
+        stride_h = boost::numeric_cast<unsigned int>(a.i());
+    }
+    unsigned int stride_w = stride_h;
+
+
+
+
+    unsigned int pad_h = 0;
+    auto p = args.find("pad");
+    if(p!=args.end())
+    {
+        const caffe2::Argument& a = *p->second;
+        pad_h = boost::numeric_cast<unsigned int>(a.i());
+    }
+    unsigned int pad_w = pad_h;
+
+
+
+    Pooling2dDescriptor pooling2dDescriptor;
+    pooling2dDescriptor.m_PoolType = PoolingAlgorithm::Average;
+
+
+
+    pooling2dDescriptor.m_PadLeft     = pad_w;
+    pooling2dDescriptor.m_PadRight    = pad_w;
+    pooling2dDescriptor.m_PadTop      = pad_h;
+    pooling2dDescriptor.m_PadBottom   = pad_h;
+    pooling2dDescriptor.m_StrideX     = stride_w;
+    pooling2dDescriptor.m_StrideY     = stride_h;
+    pooling2dDescriptor.m_PoolWidth   = kernel_w;
+    pooling2dDescriptor.m_PoolHeight  = kernel_h;
+
+    pooling2dDescriptor.m_OutputShapeRounding = OutputShapeRounding::Ceiling;
+    pooling2dDescriptor.m_PaddingMethod  = PaddingMethod::IgnoreValue;
+
+    
+    
+    TensorInfo outputInfo(
+        { inputInfo.GetShape()[0],
+          inputInfo.GetShape()[1],
+          static_cast<unsigned int>(
+              static_cast<float>(inputInfo.GetShape()[2] + 2 * pad_h - kernel_h) /
+              boost::numeric_cast<float>(stride_h)) + 1,
+          static_cast<unsigned int>(
+              static_cast<float>(inputInfo.GetShape()[3] + 2 * pad_w - kernel_w) /
+              boost::numeric_cast<float>(stride_w)) + 1 },
+        DataType::Float32);
+
+
+    armnn::IConnectableLayer* poolingLayer = m_Network->AddPooling2dLayer(pooling2dDescriptor,
+        name.c_str());
+    GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(poolingLayer->GetInputSlot(0));
+     poolingLayer->GetOutputSlot(0).SetTensorInfo(outputInfo);
+    SetArmnnOutputSlotForCaffe2Output(op.output(0), poolingLayer->GetOutputSlot(0));
 
  }
 
+
+
+
+void Caffe2ParserBase::ParseSoftmaxLayer(const caffe2::OperatorDef& op)
+ {
+     armnn::SoftmaxDescriptor softmaxDescriptor;
+     const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+     
+     const string& name = op.type();
+     IConnectableLayer* const softmaxLayer = m_Network->AddSoftmaxLayer(softmaxDescriptor, name.c_str());
+    GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(softmaxLayer->GetInputSlot(0));
+
+    softmaxLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
+    SetArmnnOutputSlotForCaffe2Output(op.output(0), softmaxLayer->GetOutputSlot(0));
+ }
+
+
+
+void Caffe2ParserBase::ParseSumLayer(const caffe2::OperatorDef& op)
+{
+    const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+     armnn::IConnectableLayer* newLayer =  m_Network->AddAdditionLayer(op.type().c_str());
+
+    GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(newLayer->GetInputSlot(0));
+    GetArmnnOutputSlotForCaffe2Output(op.input(1)).Connect(newLayer->GetInputSlot(1));
+    newLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
+    SetArmnnOutputSlotForCaffe2Output(op.output(0), newLayer->GetOutputSlot(0));
+}
 
 
 void Caffe2ParserBase::TrackOutputBinding(armnn::IConnectableLayer* layer,
@@ -666,12 +795,27 @@ void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
     }
 
     this->ParseInputLayer();
-    
-    OperationParsingFunction fun = &Caffe2ParserBase::ParseConvLayer;
-    (this->*fun)(*nodes.at(0));
-
-    OperationParsingFunction funr = &Caffe2ParserBase::ParseReluLayer;
-    (this->*funr)(*nodes.at(1));
+   // int k=0;
+   for(const caffe2::OperatorDef* current : nodes)
+   {
+    //    if(k>=5)
+    //    {
+    //        break;
+    //    }
+    //    k++;
+       auto it = ms_Caffe2OperatorToParsingFunctions.find(current->type());
+       if (it == ms_Caffe2OperatorToParsingFunctions.end())
+        {
+            throw ParseException(
+                boost::str(
+                    boost::format("Unsupported layer type: '%1%' for layer %2% %3%") %
+                    current->type() %
+                    current->name() %
+                    CHECK_LOCATION().AsString()));
+        }
+        auto func = it->second;
+        (this->*func)(*current);
+   }
   
     for (const std::string& requestedOutput : m_RequestedOutputs)
     {

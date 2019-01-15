@@ -42,6 +42,9 @@ namespace armnnCaffe2Parser
         void AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& op,
                                             const armnn::Convolution2dDescriptor convDesc,
                                             unsigned int kernel);
+        void ParseAvePoolingLayer(const caffe2::OperatorDef& op);
+        void ParseSoftmaxLayer(const caffe2::OperatorDef& op);
+        void ParseSumLayer(const caffe2::OperatorDef& op);
 
 
 
