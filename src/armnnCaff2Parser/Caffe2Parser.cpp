@@ -245,8 +245,11 @@ void Caffe2ParserBase::ParseInputLayer()
 
  void Caffe2ParserBase::ParseReluLayer(const caffe2::OperatorDef& op)
  {
+
+     BOOST_ASSERT(op.type()=="Relu");
      ActivationDescriptor activationDescriptor;
      const string& name = op.type();
+     activationDescriptor.m_Function = ActivationFunction::ReLu;
      const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
      IConnectableLayer* const activationLayer = m_Network->AddActivationLayer(activationDescriptor, name.c_str());
      GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(activationLayer->GetInputSlot(0));
@@ -666,6 +669,9 @@ void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
     
     OperationParsingFunction fun = &Caffe2ParserBase::ParseConvLayer;
     (this->*fun)(*nodes.at(0));
+
+    OperationParsingFunction funr = &Caffe2ParserBase::ParseReluLayer;
+    (this->*funr)(*nodes.at(1));
   
     for (const std::string& requestedOutput : m_RequestedOutputs)
     {
@@ -678,6 +684,8 @@ void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
 
         TrackOutputBinding(outputLayer, outputId, outputLayer->GetInputSlot(0).GetConnection()->GetTensorInfo());
     }
+
+
 
 }
 
