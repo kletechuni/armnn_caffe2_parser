@@ -31,19 +31,11 @@ namespace armnnCaffe2Parser
 
         void ParseInputLayer();
         void ParseReluLayer(const caffe2::OperatorDef& op);
-
-        void ParseSoftmaxLayer(const caffe2::OperatorDef& op);
-        void ParsePoolingLayer(const caffe2::OperatorDef& op);
-
         void ParseFCLayer(const caffe2::OperatorDef& op);
 
-        void ParseSoftmaxLayer(const caffe2::OperatorDef& op);
-        void ParseAvePoolingLayer(const caffe2::OperatorDef& op);
 
 
-
-
-
+    
     armnn::TensorInfo  ArgumentToTensorInfo(const caffe2::Argument& arg);
     armnn::IOutputSlot& GetArmnnOutputSlotForCaffe2Output(const std::string& caffe2outputName) const;  
     void SetArmnnOutputSlotForCaffe2Output(const std::string& caffe2OutputName, armnn::IOutputSlot& armnnOutputSlot);
