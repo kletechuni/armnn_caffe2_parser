@@ -23,8 +23,14 @@ namespace armnnCaffe2Parser
     {
      public:
         
-         void CreateNetworkFromNetDef(caffe2::NetDef& init,caffe2::NetDef& predict,const std::map<std::string, armnn::TensorShape>& inputShapes);
+         armnn::INetworkPtr CreateNetworkFromNetDef(caffe2::NetDef& init,caffe2::NetDef& predict,const std::map<std::string, armnn::TensorShape>& inputShapes,
+         const std::vector<std::string>& requestedOutputs);
          
+    /// Retrieves binding info (layer id and tensor info) for the network input identified by the given layer name.
+    virtual BindingPointInfo GetNetworkInputBindingInfo(const std::string& name) const override;
+/// Retrieves binding info (layer id and tensor info) for the network output identified by the given layer name.
+    virtual BindingPointInfo GetNetworkOutputBindingInfo(const std::string& name) const override;
+
         Caffe2ParserBase();
         
     protected:
@@ -32,6 +38,13 @@ namespace armnnCaffe2Parser
         void ParseInputLayer();
         void ParseReluLayer(const caffe2::OperatorDef& op);
         void ParseFCLayer(const caffe2::OperatorDef& op);
+        void ParseConvLayer(const caffe2::OperatorDef& op);
+        void AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& op,
+                                            const armnn::Convolution2dDescriptor convDesc,
+                                            unsigned int kernel);
+        void ParseAvePoolingLayer(const caffe2::OperatorDef& op);
+        void ParseSoftmaxLayer(const caffe2::OperatorDef& op);
+        void ParseSumLayer(const caffe2::OperatorDef& op);
 
 
 
@@ -45,6 +58,11 @@ namespace armnnCaffe2Parser
     const char* bindingPointDesc,
     std::unordered_map<std::string, BindingPointInfo>& nameToBindingInfo);
 
+    static std::pair<armnn::LayerBindingId, armnn::TensorInfo> GetBindingInfo(
+        const std::string& layerName,
+        const char* bindingPointDesc,
+        const std::unordered_map<std::string, BindingPointInfo>& bindingInfos);
+
         void TrackInputBinding(armnn::IConnectableLayer* layer,
             armnn::LayerBindingId id,
             const armnn::TensorInfo& tensorInfo);
@@ -52,7 +70,7 @@ namespace armnnCaffe2Parser
         armnn::INetworkPtr m_Network;
 
         std::map<std::string, const caffe2::OperatorDef*> m_Caffe2OperatorsByOutputName;
-        using OperationParsingFunction = void(Caffe2ParserBase::*)(const caffe2::OperatorDef op);
+        using OperationParsingFunction = void(Caffe2ParserBase::*)(const caffe2::OperatorDef& op);
         static const std::map<std::string, OperationParsingFunction> ms_Caffe2OperatorToParsingFunctions;
         std::map<std::string, armnn::TensorShape> m_InputShapes;
 
@@ -63,10 +81,18 @@ namespace armnnCaffe2Parser
 
         std::map<std::string, const caffe2::OperatorDef*> blobs;
 
+         /// maps output layer names to their corresponding ids and tensor infos
+        std::unordered_map<std::string, BindingPointInfo> m_NetworkOutputsBindingInfo;
+
+        std::vector<std::string> m_RequestedOutputs;
+
+       void TrackOutputBinding(armnn::IConnectableLayer* layer,
+                               armnn::LayerBindingId id,
+                                const armnn::TensorInfo& tensorInfo);
+
 /*
         /// Retrieves binding info (layer id and tensor info) for the network input identified by the given layer name.
     virtual BindingPointInfo GetNetworkInputBindingInfo(const std::string& name) const override;
-
     /// Retrieves binding info (layer id and tensor info) for the network output identified by the given layer name.
     virtual BindingPointInfo GetNetworkOutputBindingInfo(const std::string& name) const override;
     Caffe2ParserBase();*/
@@ -77,11 +103,9 @@ namespace armnnCaffe2Parser
     {
     public:
 
-        virtual void CreateNetworkFromBinaryFile(const char* predict_net,const char* init_net,
-                const std::map<std::string, armnn::TensorShape>& inputShapes)override;
+        virtual armnn::INetworkPtr CreateNetworkFromBinaryFile(const char* predict_net,const char* init_net,
+                const std::map<std::string, armnn::TensorShape>& inputShapes,const std::vector<std::string>& requestedOutputs)override;
     // public:
          Caffe2Parser();
     };
     }
-
- 
