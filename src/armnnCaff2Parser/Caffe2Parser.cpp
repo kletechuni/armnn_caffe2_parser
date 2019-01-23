@@ -313,7 +313,6 @@ void Caffe2ParserBase::ParseInputLayer()
      fullyConnectedLayer->GetOutputSlot(0).SetTensorInfo(outputInfo);
      SetArmnnOutputSlotForCaffe2Output(op.output(0),fullyConnectedLayer->GetOutputSlot(0));
 
-     std::cout<<outputInfo.GetShape()[0]<<"\t"<<outputInfo.GetShape()[1]<<"\n";
 
  }
 
@@ -422,7 +421,6 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
     inputConnection.Connect(returnLayer->GetInputSlot(0));
     returnLayer->GetOutputSlot(0).SetTensorInfo(ArgumentToTensorInfo(outputShape));
     SetArmnnOutputSlotForCaffe2Output(op.output(0),returnLayer->GetOutputSlot(0));
-     std::cout<<outputShape.ints(0)<<"\t"<<outputShape.ints(1)<<"\t"<<outputShape.ints(2)<<"\t"<<outputShape.ints(3)<<"\n";
 
 }
 
@@ -460,7 +458,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
          const caffe2::Argument& a = *it1->second;
          numGroups = boost::numeric_cast<unsigned int>(a.i());
      }
-      std::cout<<"group "<<numGroups<<std::endl;
+     
 
      unsigned int kernel = 0;
      auto it2 = args.find("kernel");
@@ -469,7 +467,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
          const caffe2::Argument& a = *it2->second;
          kernel = boost::numeric_cast<unsigned int>(a.i());
      }
-     std::cout<<"kernel "<<kernel<<std::endl;
+   
 
      unsigned int stride = 1;
      auto it3 = args.find("stride");
@@ -479,7 +477,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
          stride = boost::numeric_cast<unsigned int>(a.i());
      }
 
-     std::cout<<"stride "<<stride<<std::endl;
+    
 
      unsigned int pad = 0;
      auto it4 = args.find("pad");
@@ -489,7 +487,7 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
          pad = boost::numeric_cast<unsigned int>(a.i());
      }
 
-     std::cout<<"pad "<<pad<<std::endl;
+    
      Convolution2dDescriptor convolution2dDescriptor;
 
      convolution2dDescriptor.m_PadLeft = pad;
@@ -633,9 +631,8 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
                     numFilters %
                     CHECK_LOCATION().AsString()));
     }
-    std::cout<<"output "<<op.output(0)<<std::endl;
+   
     SetArmnnOutputSlotForCaffe2Output(op.output(0), returnLayer->GetOutputSlot(0));
-    std::cout<<outputShape.ints(0)<<"\t"<<outputShape.ints(1)<<"\t"<<outputShape.ints(2)<<"\t"<<outputShape.ints(3)<<"\n";
  }
 
 
