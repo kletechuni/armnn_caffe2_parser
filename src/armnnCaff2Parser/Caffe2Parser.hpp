@@ -45,6 +45,7 @@ namespace armnnCaffe2Parser
         void ParseAvePoolingLayer(const caffe2::OperatorDef& op);
         void ParseSoftmaxLayer(const caffe2::OperatorDef& op);
         void ParseSumLayer(const caffe2::OperatorDef& op);
+        void ParseLRNLayer(const caffe2::OperatorDef& op);
 
 
 

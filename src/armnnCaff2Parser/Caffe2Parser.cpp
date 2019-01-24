@@ -98,8 +98,9 @@ const std::map<std::string, Caffe2ParserBase::OperationParsingFunction>
     { "Conv",           &Caffe2ParserBase::ParseConvLayer},
     { "AveragePool",    &Caffe2ParserBase::ParseAvePoolingLayer },
     { "FC",             &Caffe2ParserBase::ParseFCLayer },
-    { "Softmax",        &Caffe2ParserBase::ParseSoftmaxLayer},
-    { "Sum",            &Caffe2ParserBase::ParseSumLayer},
+    { "Softmax",        &Caffe2ParserBase::ParseSoftmaxLayer },
+    { "Sum",            &Caffe2ParserBase::ParseSumLayer },
+    { "LRN",            &Caffe2ParserBase::ParseLRNLayer },
     };
     
     Caffe2ParserBase::Caffe2ParserBase()
@@ -753,6 +754,98 @@ void Caffe2ParserBase::ParseSumLayer(const caffe2::OperatorDef& op)
     GetArmnnOutputSlotForCaffe2Output(op.input(1)).Connect(newLayer->GetInputSlot(1));
     newLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
     SetArmnnOutputSlotForCaffe2Output(op.output(0), newLayer->GetOutputSlot(0));
+}
+
+
+
+void Caffe2ParserBase::ParseLRNLayer(const caffe2::OperatorDef& op)
+{
+    const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+    NormalizationDescriptor normalizationDescriptor;
+    normalizationDescriptor.m_NormChannelType = NormalizationAlgorithmChannel::Across;
+    normalizationDescriptor.m_NormMethodType = NormalizationAlgorithmMethod::LocalBrightness;
+   
+    std::map<std::string, const caffe2::Argument*> args;
+
+    for (int i=0 ; i<op.arg_size() ;++i)
+    {
+        args.insert({op.arg(i).name(),&op.arg(i)});
+        
+    }
+
+     auto k = args.find("size");
+    if(k!=args.end())
+    {
+        const caffe2::Argument& a = *k->second;
+        normalizationDescriptor.m_NormSize = boost::numeric_cast<unsigned int>(a.i());
+    }
+     else
+    {
+        throw ParseException(
+            boost::str(
+                boost::format(
+                    "size not defined for LRN layer %1% %2%") %
+                    op.type() %
+                    CHECK_LOCATION().AsString()));
+    }
+
+
+    auto k1 = args.find("alpha");
+    if(k1!=args.end())
+    {
+        const caffe2::Argument& a = *k1->second;
+        normalizationDescriptor.m_Alpha = boost::numeric_cast<float>(a.f());
+        normalizationDescriptor.m_Alpha /= boost::numeric_cast<float>( normalizationDescriptor.m_NormSize);
+    }
+     else
+    {
+        throw ParseException(
+            boost::str(
+                boost::format(
+                    "alpha not defined for LRN layer %1% %2%") %
+                    op.type() %
+                    CHECK_LOCATION().AsString()));
+    }
+
+
+     auto k2 = args.find("beta");
+    if(k2!=args.end())
+    {
+        const caffe2::Argument& a = *k2->second;
+        normalizationDescriptor.m_Beta = boost::numeric_cast<float>(a.f());
+        
+    }
+     else
+    {
+        throw ParseException(
+            boost::str(
+                boost::format(
+                    "beta not defined for LRN layer %1% %2%") %
+                    op.type() %
+                    CHECK_LOCATION().AsString()));
+    }
+
+
+      auto k3 = args.find("bias");
+    if(k3!=args.end())
+    {
+        const caffe2::Argument& a = *k3->second;
+        normalizationDescriptor.m_K = boost::numeric_cast<float>(a.f());
+        
+    }
+     else
+    {
+         normalizationDescriptor.m_K = 1;
+    }
+
+    IConnectableLayer* const normLayer = m_Network->AddNormalizationLayer(normalizationDescriptor,op.type().c_str());
+    GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(normLayer->GetInputSlot(0));
+    normLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
+
+    SetArmnnOutputSlotForCaffe2Output(op.output(0),normLayer->GetOutputSlot(0));
+
+
+    
 }
 
 
