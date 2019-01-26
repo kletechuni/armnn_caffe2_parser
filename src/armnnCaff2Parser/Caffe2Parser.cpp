@@ -101,6 +101,8 @@ const std::map<std::string, Caffe2ParserBase::OperationParsingFunction>
     { "Softmax",        &Caffe2ParserBase::ParseSoftmaxLayer },
     { "Sum",            &Caffe2ParserBase::ParseSumLayer },
     { "LRN",            &Caffe2ParserBase::ParseLRNLayer },
+    { "Dropout",        &Caffe2ParserBase::ParseDropoutLayer },
+    { "MaxPool",        &Caffe2ParserBase::ParseMaxPoolingLayer},
     };
     
     Caffe2ParserBase::Caffe2ParserBase()
@@ -151,6 +153,80 @@ std::pair<armnn::LayerBindingId, armnn::TensorInfo> Caffe2ParserBase::GetBinding
 
 
 
+void Caffe2ParserBase::ResolveInplaceLayers(caffe2::NetDef& predict)
+{
+    std::map<std::string, std::vector<caffe2::OperatorDef*>> layersbyop;
+
+    for(int layerIdx = 0; layerIdx < predict.op_size(); ++layerIdx)
+    {
+        //finds the layer with same output
+        caffe2::OperatorDef& op = *predict.mutable_op(layerIdx);
+        std::string name = op.type();
+        for(int i=0 ; i < op.output_size(); ++i)
+        {
+            layersbyop[op.output(i)].push_back(&op);
+        }
+    }
+
+    for (auto layersWithSameopIt : layersbyop)
+    {
+        const std::string& output = layersWithSameopIt.first;
+        const std::vector<caffe2::OperatorDef*>& layersWithSameop = layersWithSameopIt.second;
+
+        for (unsigned int layerIdx = 0; layerIdx < layersWithSameop.size() - 1; ++layerIdx)
+        {
+                caffe2::OperatorDef& op1 = *layersWithSameop[layerIdx];
+                caffe2::OperatorDef& op2 = *layersWithSameop[layerIdx + 1];
+                if (op1.output_size() != 1)
+                {
+                    throw ParseException(
+                        boost::str(
+                            boost::format(
+                                "Node '%1%' is an in-place layer but doesn't have exactly one "
+                                "top. It has %2% instead. %3%") %
+                                op1.type() %
+                                op1.output_size() %
+                                CHECK_LOCATION().AsString()));
+                }
+            
+
+            std::string newOutput = op1.output(0)+"_inplace";
+            op1.set_output(0, newOutput);
+
+            if (op2.input_size() != 1 || op2.input(0) != output)
+            {
+                throw ParseException(
+                        boost::str(
+                            boost::format(
+                                "Node '%1%' is an in-place layer but "
+                                "doesn't have exactly one bottom, or it doesn't match its top. "
+                                "#bottoms=%2%, first bottom is %3%, top is %4% %5%") %
+                                op2.type() %
+                                op2.input(0) %
+                                output %
+                                CHECK_LOCATION().AsString()));
+            }
+            op2.set_input(0, newOutput);
+        }
+    }
+
+
+}
+
+
+caffe2::Argument TensorDescToArguementShape(const TensorInfo& desc)
+{
+    caffe2::Argument arg;
+    arg.set_name("shape");
+    for(unsigned int i=0; i<desc.GetNumDimensions(); ++i)
+    {
+        arg.add_ints(i);
+        arg.set_ints(boost::numeric_cast<int>(i), desc.GetShape()[i]);
+    }
+
+    return arg;
+
+}
 
 TensorInfo Caffe2ParserBase::ArgumentToTensorInfo(const caffe2::Argument& arg)
 {
@@ -427,6 +503,197 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
 
 
 
+
+void Caffe2ParserBase::AddConvLayerWithSplits(const caffe2::OperatorDef& op,
+                                            const armnn::Convolution2dDescriptor convDesc,
+                                            unsigned int kernel, unsigned int numGroups)
+{
+    caffe2::Argument inputShape = TensorDescToArguementShape(GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo());
+    armnn::IOutputSlot& inputConnection = GetArmnnOutputSlotForCaffe2Output(op.input(0));
+
+    vector<string> convLayerNames(numGroups);
+    vector<armnn::IConnectableLayer*> convLayers(numGroups);
+    convLayerNames[0] = op.type();
+
+    unsigned int splitterDimSizes[4] = {static_cast<unsigned int>(inputShape.ints(0)),
+                                        static_cast<unsigned int>(inputShape.ints(1)),
+                                        static_cast<unsigned int>(inputShape.ints(2)),
+                                        static_cast<unsigned int>(inputShape.ints(3))};
+
+    splitterDimSizes[1] /= numGroups;
+    inputShape.set_ints(1, splitterDimSizes[1]);
+
+    ViewsDescriptor splitterDesc(numGroups);
+
+    for(unsigned int g=0; g<numGroups; ++g)
+    {
+        stringstream ss;
+        ss << op.type() << "_" << g;
+        convLayerNames[g] = ss.str();
+
+        splitterDesc.SetViewOriginCoord(g, 1, splitterDimSizes[1] * g);
+
+        for(unsigned int dimIdx=0; dimIdx < 4; dimIdx++)
+        {
+            splitterDesc.SetViewSize(g, dimIdx, splitterDimSizes[dimIdx]);
+        }
+    }
+
+    const std::string splitterLayerName = std::string("splitter_")+op.type();
+    armnn::IConnectableLayer* splitterLayer = m_Network->AddSplitterLayer(splitterDesc, splitterLayerName.c_str());
+
+    inputConnection.Connect(splitterLayer->GetInputSlot(0));
+    for (unsigned int i = 0; i < splitterLayer->GetNumOutputSlots(); i++)
+    {
+        splitterLayer->GetOutputSlot(i).SetTensorInfo(ArgumentToTensorInfo(inputShape));
+    }
+
+    auto it = blobs.find(op.input(1));
+     if(it == blobs.end())
+     {
+         throw ParseException(
+            boost::str(
+                boost::format(
+                    "Could not find the '%1%' in conv Layer")%
+                    op.input(1).c_str()
+                    ));
+     }
+     const caffe2::OperatorDef& w = *it->second;
+
+
+     auto it1 = blobs.find(op.input(2));
+     if(it1 == blobs.end())
+     {
+         throw ParseException(
+            boost::str(
+                boost::format(
+                    "Could not find the '%1%' in conv Layer")%
+                    op.input(2).c_str()
+                    ));
+     }
+     const caffe2::OperatorDef& b = *it1->second;
+
+     unsigned int numFilters = w.arg(0).ints(0);
+
+    caffe2::Argument outputShape;
+    outputShape.set_name("shape");
+    outputShape.add_ints(0);
+    outputShape.set_ints(0,inputShape.ints(0));
+    outputShape.add_ints(1);
+    outputShape.set_ints(1,numFilters/numGroups);
+    outputShape.add_ints(2);
+    outputShape.set_ints(
+        2, (static_cast<int>(static_cast<float>(inputShape.ints(2) +  2 * convDesc.m_PadBottom - kernel)/
+                            static_cast<float>(convDesc.m_StrideY))+1));
+    outputShape.add_ints(3);
+    outputShape.set_ints(
+        3, (static_cast<int>(static_cast<float>(inputShape.ints(3) +  2 * convDesc.m_PadRight - kernel)/
+                            static_cast<float>(convDesc.m_StrideX))+1));
+
+    // Load the weight data for ALL groups
+    vector<float> weightData(boost::numeric_cast<size_t>(numGroups *
+                                                         inputShape.ints(1) *  // number of input channels
+                                                         outputShape.ints(1) * // number of output channels
+                                                         kernel *
+                                                         kernel));
+    GetDataFromBlob(w.arg(1), weightData);
+    const unsigned int weightDimSizes[4] = {
+        static_cast<unsigned int>(outputShape.ints(1)),
+        static_cast<unsigned int>(inputShape.ints(1)),
+        kernel,
+        kernel};
+    TensorInfo biasInfo;
+    vector<float> biasData;
+
+     if (convDesc.m_BiasEnabled)
+    {
+        biasData.resize(boost::numeric_cast<size_t>(numGroups * outputShape.ints(1)), 1.f);
+        GetDataFromBlob(b.arg(1), biasData);
+
+        const unsigned int biasDimSizes[1] = {static_cast<unsigned int>(outputShape.ints(1))};
+        biasInfo = TensorInfo(1, biasDimSizes, DataType::Float32);
+    }
+
+    const unsigned int numWeightsPerGroup = boost::numeric_cast<unsigned int>(weightData.size()) / numGroups;
+    const unsigned int numBiasesPerGroup  = boost::numeric_cast<unsigned int>(biasData.size()) / numGroups;
+
+     for (unsigned int g = 0; g < numGroups; ++g)
+    {
+        // Sets the slot index, group 0 should be connected to the 0th output of the splitter
+        // group 1 should be connected to the 1st output of the splitter.
+
+        // Pulls out the weights for this group from that loaded from the model file earlier.
+        ConstTensor weights(TensorInfo(4, weightDimSizes, DataType::Float32),
+                            weightData.data() + numWeightsPerGroup * g);
+
+        IConnectableLayer* convLayer = nullptr;
+        if (convDesc.m_BiasEnabled)
+        {
+            // Pulls out the biases for this group from that loaded from the model file earlier.
+            ConstTensor biases(biasInfo, biasData.data() + numBiasesPerGroup * g);
+
+            convLayer =
+                m_Network->AddConvolution2dLayer(convDesc, weights, biases, convLayerNames[g].c_str());
+        }
+        else
+        {
+            convLayer =
+                m_Network->AddConvolution2dLayer(convDesc, weights, convLayerNames[g].c_str());
+        }
+        convLayers[g] = convLayer;
+
+        // If we have more than one group then the input to the nth convolution the splitter layer's nth output,
+        // otherwise it's the regular input to this layer.
+        armnn::IOutputSlot& splitterInputConnection =
+            splitterLayer ? splitterLayer->GetOutputSlot(g) : inputConnection;
+        splitterInputConnection.Connect(convLayer->GetInputSlot(0));
+        convLayer->GetOutputSlot(0).SetTensorInfo(ArgumentToTensorInfo(outputShape));
+    }
+
+     // If the convolution was performed in chunks, add a layer to merge the results
+
+    // The merge input shape matches that of the convolution output
+    unsigned int mergeDimSizes[4] = {static_cast<unsigned int>(outputShape.ints(0)),
+                                        static_cast<unsigned int>(outputShape.ints(1)),
+                                        static_cast<unsigned int>(outputShape.ints(2)),
+                                        static_cast<unsigned int>(outputShape.ints(3))};
+    // This is used to describe how the input is to be merged
+    OriginsDescriptor mergeDesc(numGroups);
+    // Now create an input node for each group, using the name from
+    // the output of the corresponding convolution
+    for (unsigned int g = 0; g < numGroups; ++g)
+    {
+        mergeDesc.SetViewOriginCoord(g, 1, mergeDimSizes[1] * g);
+    }
+
+      // Make sure the output from the merge is the correct size to hold the data for all groups
+    mergeDimSizes[1] *= numGroups;
+    outputShape.set_ints(1, mergeDimSizes[1]);
+    // Finally add the merge layer
+    IConnectableLayer* mergerLayer = m_Network->AddMergerLayer(mergeDesc, op.type().c_str());
+
+    if (!mergerLayer)
+    {
+        throw ParseException(
+            boost::str(
+                boost::format(
+                    "Failed to create final merger layer for Split+Convolution+Merger. "
+                    "Layer=%1% #groups=%2% #filters=%3% %4%") %
+                    op.type() %
+                    numGroups %
+                    numFilters %
+                    CHECK_LOCATION().AsString()));
+    }
+
+    for (unsigned int g = 0; g < numGroups; ++g)
+    {
+        convLayers[g]->GetOutputSlot(0).Connect(mergerLayer->GetInputSlot(g));
+    }
+     mergerLayer->GetOutputSlot(0).SetTensorInfo(armnn::TensorInfo(4, mergeDimSizes, DataType::Float32));
+
+     SetArmnnOutputSlotForCaffe2Output(op.output(0), mergerLayer->GetOutputSlot(0));
+}
+
  void Caffe2ParserBase::ParseConvLayer(const caffe2::OperatorDef& op)
  {    
      BOOST_ASSERT(op.type()=="Conv");
@@ -556,6 +823,11 @@ void Caffe2ParserBase::AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& 
             return;
              
         }
+        else
+        {
+            AddConvLayerWithSplits(op,convolution2dDescriptor, kernel, numGroups);
+        }
+        
 
     }
     
@@ -677,14 +949,47 @@ void Caffe2ParserBase::ParseAvePoolingLayer(const caffe2::OperatorDef& op)
 
 
 
-    unsigned int pad_h = 0;
+    unsigned int pad_l = 0, pad_r = 0, pad_t1 = 0, pad_b = 0;
     auto p = args.find("pad");
     if(p!=args.end())
     {
         const caffe2::Argument& a = *p->second;
-        pad_h = boost::numeric_cast<unsigned int>(a.i());
+        pad_l = boost::numeric_cast<unsigned int>(a.i());
+        pad_r = pad_l;
+        pad_t1 = pad_r;
+        pad_b = pad_t1;
     }
-    unsigned int pad_w = pad_h;
+    else
+    {
+         auto p1 = args.find("pad_l");
+         if(p1!=args.end())
+        {
+            const caffe2::Argument& a = *p1->second;
+            pad_l = boost::numeric_cast<unsigned int>(a.i());
+        }
+        auto p2 = args.find("pad_r");
+         if(p2!=args.end())
+        {
+            const caffe2::Argument& a = *p2->second;
+            pad_r = boost::numeric_cast<unsigned int>(a.i());
+        }
+
+        auto p3 = args.find("pad_t1");
+         if(p3!=args.end())
+        {
+            const caffe2::Argument& a = *p3->second;
+            pad_t1 = boost::numeric_cast<unsigned int>(a.i());
+        }
+
+        auto p4 = args.find("pad_b");
+         if(p4!=args.end())
+        {
+            const caffe2::Argument& a = *p4->second;
+            pad_b = boost::numeric_cast<unsigned int>(a.i());
+        }
+    }
+    
+   
 
 
 
@@ -693,10 +998,10 @@ void Caffe2ParserBase::ParseAvePoolingLayer(const caffe2::OperatorDef& op)
 
 
 
-    pooling2dDescriptor.m_PadLeft     = pad_w;
-    pooling2dDescriptor.m_PadRight    = pad_w;
-    pooling2dDescriptor.m_PadTop      = pad_h;
-    pooling2dDescriptor.m_PadBottom   = pad_h;
+    pooling2dDescriptor.m_PadLeft     = pad_l;
+    pooling2dDescriptor.m_PadRight    = pad_r;
+    pooling2dDescriptor.m_PadTop      = pad_t1;
+    pooling2dDescriptor.m_PadBottom   = pad_b;
     pooling2dDescriptor.m_StrideX     = stride_w;
     pooling2dDescriptor.m_StrideY     = stride_h;
     pooling2dDescriptor.m_PoolWidth   = kernel_w;
@@ -711,12 +1016,13 @@ void Caffe2ParserBase::ParseAvePoolingLayer(const caffe2::OperatorDef& op)
         { inputInfo.GetShape()[0],
           inputInfo.GetShape()[1],
           static_cast<unsigned int>(
-              static_cast<float>(inputInfo.GetShape()[2] + 2 * pad_h - kernel_h) /
+              static_cast<float>(inputInfo.GetShape()[2] + pad_t1 + pad_b - kernel_h) /
               boost::numeric_cast<float>(stride_h)) + 1,
           static_cast<unsigned int>(
-              static_cast<float>(inputInfo.GetShape()[3] + 2 * pad_w - kernel_w) /
+              static_cast<float>(inputInfo.GetShape()[3] + pad_l + pad_r - kernel_w) /
               boost::numeric_cast<float>(stride_w)) + 1 },
         DataType::Float32);
+
 
 
     armnn::IConnectableLayer* poolingLayer = m_Network->AddPooling2dLayer(pooling2dDescriptor,
@@ -728,6 +1034,124 @@ void Caffe2ParserBase::ParseAvePoolingLayer(const caffe2::OperatorDef& op)
  }
 
 
+void Caffe2ParserBase::ParseMaxPoolingLayer(const caffe2::OperatorDef& op)
+{
+     BOOST_ASSERT(op.type()=="MaxPool");
+    
+    const string& name = op.type();
+    const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+
+    std::map<std::string, const caffe2::Argument*> args;
+
+    for (int i=0 ; i<op.arg_size() ;++i)
+    {
+        args.insert({op.arg(i).name(),&op.arg(i)});
+        
+    }
+
+    unsigned int kernel_h = 0;
+    auto k = args.find("kernel");
+    if(k!=args.end())
+    {
+        const caffe2::Argument& a = *k->second;
+        kernel_h = boost::numeric_cast<unsigned int>(a.i());
+    }
+    unsigned int kernel_w = kernel_h;
+
+    
+    unsigned int stride_h = 1;
+    auto s = args.find("stride");
+    if(s!=args.end())
+    {
+        const caffe2::Argument& a = *s->second;
+        stride_h = boost::numeric_cast<unsigned int>(a.i());
+    }
+    unsigned int stride_w = stride_h;
+
+
+
+
+    unsigned int pad_l = 0, pad_r = 0, pad_t1 = 0, pad_b = 0;
+    auto p = args.find("pad");
+    if(p!=args.end())
+    {
+        const caffe2::Argument& a = *p->second;
+        pad_l = boost::numeric_cast<unsigned int>(a.i());
+        pad_r = pad_l;
+        pad_t1 = pad_r;
+        pad_b = pad_t1;
+    }
+    else
+    {
+         auto p1 = args.find("pad_l");
+         if(p1!=args.end())
+        {
+            const caffe2::Argument& a = *p1->second;
+            pad_l = boost::numeric_cast<unsigned int>(a.i());
+        }
+        auto p2 = args.find("pad_r");
+         if(p2!=args.end())
+        {
+            const caffe2::Argument& a = *p2->second;
+            pad_r = boost::numeric_cast<unsigned int>(a.i());
+        }
+
+        auto p3 = args.find("pad_t1");
+         if(p3!=args.end())
+        {
+            const caffe2::Argument& a = *p3->second;
+            pad_t1 = boost::numeric_cast<unsigned int>(a.i());
+        }
+
+        auto p4 = args.find("pad_b");
+         if(p4!=args.end())
+        {
+            const caffe2::Argument& a = *p4->second;
+            pad_b = boost::numeric_cast<unsigned int>(a.i());
+        }
+    }
+    
+   
+
+
+
+    Pooling2dDescriptor pooling2dDescriptor;
+    pooling2dDescriptor.m_PoolType = PoolingAlgorithm::Max;
+
+
+
+    pooling2dDescriptor.m_PadLeft     = pad_l;
+    pooling2dDescriptor.m_PadRight    = pad_r;
+    pooling2dDescriptor.m_PadTop      = pad_t1;
+    pooling2dDescriptor.m_PadBottom   = pad_b;
+    pooling2dDescriptor.m_StrideX     = stride_w;
+    pooling2dDescriptor.m_StrideY     = stride_h;
+    pooling2dDescriptor.m_PoolWidth   = kernel_w;
+    pooling2dDescriptor.m_PoolHeight  = kernel_h;
+
+    pooling2dDescriptor.m_OutputShapeRounding = OutputShapeRounding::Ceiling;
+    pooling2dDescriptor.m_PaddingMethod  = PaddingMethod::IgnoreValue;
+
+    
+    
+    TensorInfo outputInfo(
+        { inputInfo.GetShape()[0],
+          inputInfo.GetShape()[1],
+          static_cast<unsigned int>(
+              static_cast<float>(inputInfo.GetShape()[2] + pad_t1 + pad_b - kernel_h) /
+              boost::numeric_cast<float>(stride_h)) + 1,
+          static_cast<unsigned int>(
+              static_cast<float>(inputInfo.GetShape()[3] + pad_l + pad_r - kernel_w) /
+              boost::numeric_cast<float>(stride_w)) + 1 },
+        DataType::Float32);
+
+
+    armnn::IConnectableLayer* poolingLayer = m_Network->AddPooling2dLayer(pooling2dDescriptor,
+        name.c_str());
+    GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(poolingLayer->GetInputSlot(0));
+     poolingLayer->GetOutputSlot(0).SetTensorInfo(outputInfo);
+    SetArmnnOutputSlotForCaffe2Output(op.output(0), poolingLayer->GetOutputSlot(0));
+}
 
 
 void Caffe2ParserBase::ParseSoftmaxLayer(const caffe2::OperatorDef& op)
@@ -760,6 +1184,7 @@ void Caffe2ParserBase::ParseSumLayer(const caffe2::OperatorDef& op)
 
 void Caffe2ParserBase::ParseLRNLayer(const caffe2::OperatorDef& op)
 {
+
     const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
     NormalizationDescriptor normalizationDescriptor;
     normalizationDescriptor.m_NormChannelType = NormalizationAlgorithmChannel::Across;
@@ -795,6 +1220,7 @@ void Caffe2ParserBase::ParseLRNLayer(const caffe2::OperatorDef& op)
     {
         const caffe2::Argument& a = *k1->second;
         normalizationDescriptor.m_Alpha = boost::numeric_cast<float>(a.f());
+        //in the formula the alpha is divided by the size
         normalizationDescriptor.m_Alpha /= boost::numeric_cast<float>( normalizationDescriptor.m_NormSize);
     }
      else
@@ -843,11 +1269,28 @@ void Caffe2ParserBase::ParseLRNLayer(const caffe2::OperatorDef& op)
     normLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
 
     SetArmnnOutputSlotForCaffe2Output(op.output(0),normLayer->GetOutputSlot(0));
-
-
     
 }
 
+
+void Caffe2ParserBase::ParseDropoutLayer(const caffe2::OperatorDef& op)
+{
+    if (op.input_size() != 1 || op.output_size() !=1 )
+    {
+        throw ParseException(
+            boost::str(
+                boost::format(
+                    "Dropout layer '%1%' should have exactly 1 bottom and 1 top. "
+                    "#bottoms=%2% #tops=%3% %4%") %
+                    op.type() %
+                    op.input_size() %
+                    op.output_size() %
+                    CHECK_LOCATION().AsString()));
+    
+    }
+
+    SetArmnnOutputSlotForCaffe2Output(op.output(0), GetArmnnOutputSlotForCaffe2Output(op.input(0)));
+}
 
 void Caffe2ParserBase::TrackOutputBinding(armnn::IConnectableLayer* layer,
     armnn::LayerBindingId id,
@@ -859,6 +1302,8 @@ void Caffe2ParserBase::TrackOutputBinding(armnn::IConnectableLayer* layer,
 
 void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
 {
+
+    Caffe2ParserBase::ResolveInplaceLayers(predict);
     //Create a lookup of Caff2 layers by output name
     for (int i=0;i<predict.op_size(); ++i)
     {
@@ -872,6 +1317,7 @@ void Caffe2ParserBase::LoadNetDef(caffe2::NetDef& init,caffe2::NetDef& predict)
 
     }
 
+    
     std::vector<const caffe2::OperatorDef*> nodes;
     for(int i=0;i<predict.op_size();i++)
     {

@@ -42,14 +42,19 @@ namespace armnnCaffe2Parser
         void AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& op,
                                             const armnn::Convolution2dDescriptor convDesc,
                                             unsigned int kernel);
+        void AddConvLayerWithSplits(const caffe2::OperatorDef& op,
+                                        const armnn::Convolution2dDescriptor convDesc,
+                                        unsigned int kernel, unsigned int numGroups);                                   
         void ParseAvePoolingLayer(const caffe2::OperatorDef& op);
         void ParseSoftmaxLayer(const caffe2::OperatorDef& op);
         void ParseSumLayer(const caffe2::OperatorDef& op);
         void ParseLRNLayer(const caffe2::OperatorDef& op);
+        void ParseDropoutLayer(const caffe2::OperatorDef& op);
+        void ParseMaxPoolingLayer(const caffe2::OperatorDef& op);
 
 
 
-    
+    void ResolveInplaceLayers(caffe2::NetDef& predict);
     armnn::TensorInfo  ArgumentToTensorInfo(const caffe2::Argument& arg);
     armnn::IOutputSlot& GetArmnnOutputSlotForCaffe2Output(const std::string& caffe2outputName) const;  
     void SetArmnnOutputSlotForCaffe2Output(const std::string& caffe2OutputName, armnn::IOutputSlot& armnnOutputSlot);
