@@ -274,7 +274,7 @@ void ValidateEqualValuesInRange(unsigned int valueA,
     ValidateEqualValuesInRange(A, #A, B, #B, MIN_RANGE, MAX_RANGE, CHECK_LOCATION())
 
 } // namespace <anonymous>
-
+ 
 const std::map<std::string, CaffeParserBase::OperationParsingFunction>
     CaffeParserBase::ms_CaffeLayerNameToParsingFunctions = {
     { "Input",        &CaffeParserBase::ParseInputLayer },
@@ -435,6 +435,7 @@ void CaffeParserBase::ParseInputLayer(const LayerParameter& layerParam)
                         layerParam.name() %
                         CHECK_LOCATION().AsString()));
         }
+        
         inputTensorInfo.SetShape(overrideShape);
     }
     else if (!originalShape)

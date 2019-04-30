@@ -209,6 +209,8 @@ queue
 -
 fcntl.h
 -
+iostream
+-
 caffe2.pb.h
 /home/armnn1/armnn-devenv/armnn/src/armnnCaff2Parser/caffe2.pb.h
 
@@ -227,6 +229,8 @@ vector
 -
 unordered_map
 -
+caffe2.pb.h
+/home/armnn1/armnn-devenv/armnn/src/armnnCaff2Parser/caffe2.pb.h
 
 /home/armnn1/armnn-devenv/armnn/src/armnnCaff2Parser/proto/caffe2.pb.cc
 caffe2.pb.h

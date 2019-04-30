@@ -1,0 +1,22 @@
+CXX=aarch64-linux-android-clang++ \
+ CC=aarch64-linux-android-clang \
+ CXX_FLAGS="-fPIE -fPIC" \
+ cmake .. \
+  -DCMAKE_SYSTEM_NAME=Android \
+  -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a \
+  -DCMAKE_ANDROID_STANDALONE_TOOLCHAIN=$HOME/armnn-devenv/toolchains/aarch64-android-r16b/ \
+  -DCMAKE_EXE_LINKER_FLAGS="-pie -llog" \
+  -DARMCOMPUTE_ROOT=$HOME/armnn-devenv/ComputeLibrary/ \
+  -DARMCOMPUTE_BUILD_DIR=$HOME/armnn-devenv/ComputeLibrary/build \
+  -DBOOST_ROOT=$HOME/armnn-devenv/boost/install/ \
+  -DARMCOMPUTENEON=1 -DARMCOMPUTECL=1 \
+  -DCAFFE2_GENERATED_SOURCES=$HOME/armnn-devenv/armnn/src/armnnCaff2Parser/proto -DBUILD_CAFFE2_PARSER=1 \
+  -DPROTOBUF_ROOT=$HOME/armnn-devenv/google/arm64_pb_install/
+
+
+
+
+
+export NDK=~/armnn-devenv/toolchains/android-ndk-r16b
+
+export PATH=$HOME/armnn-devenv/toolchains/aarch64-android-r16b/bin:$PATH

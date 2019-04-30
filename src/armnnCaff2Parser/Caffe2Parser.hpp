@@ -8,7 +8,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
-#include "caffe2.pb.h"
+#include "caffe2.pb.h" 
 
 
 
@@ -42,13 +42,20 @@ namespace armnnCaffe2Parser
         void AddConvLayerWithDepthwiseConv(const caffe2::OperatorDef& op,
                                             const armnn::Convolution2dDescriptor convDesc,
                                             unsigned int kernel);
+        void AddConvLayerWithSplits(const caffe2::OperatorDef& op,
+                                        const armnn::Convolution2dDescriptor convDesc,
+                                        unsigned int kernel, unsigned int numGroups);                                   
         void ParseAvePoolingLayer(const caffe2::OperatorDef& op);
         void ParseSoftmaxLayer(const caffe2::OperatorDef& op);
         void ParseSumLayer(const caffe2::OperatorDef& op);
+        void ParseLRNLayer(const caffe2::OperatorDef& op);
+        void ParseDropoutLayer(const caffe2::OperatorDef& op);
+        void ParseMaxPoolingLayer(const caffe2::OperatorDef& op);
+        void ParseConcatLayer(const caffe2::OperatorDef& op);
 
 
 
-    
+    void ResolveInplaceLayers(caffe2::NetDef& predict);
     armnn::TensorInfo  ArgumentToTensorInfo(const caffe2::Argument& arg);
     armnn::IOutputSlot& GetArmnnOutputSlotForCaffe2Output(const std::string& caffe2outputName) const;  
     void SetArmnnOutputSlotForCaffe2Output(const std::string& caffe2OutputName, armnn::IOutputSlot& armnnOutputSlot);
@@ -93,6 +100,7 @@ namespace armnnCaffe2Parser
 /*
         /// Retrieves binding info (layer id and tensor info) for the network input identified by the given layer name.
     virtual BindingPointInfo GetNetworkInputBindingInfo(const std::string& name) const override;
+
     /// Retrieves binding info (layer id and tensor info) for the network output identified by the given layer name.
     virtual BindingPointInfo GetNetworkOutputBindingInfo(const std::string& name) const override;
     Caffe2ParserBase();*/
@@ -109,3 +117,5 @@ namespace armnnCaffe2Parser
          Caffe2Parser();
     };
     }
+
+ 

@@ -117,6 +117,9 @@ BOOST_AUTO_TEST_CASE(InputShapes)
         BOOST_CHECK_THROW(parser->CreateNetworkFromString(implicitInputNoShape.c_str(), {}, { "data" }),
             armnn::ParseException);
     }
+
+
+
 }
 
 BOOST_AUTO_TEST_SUITE_END()
