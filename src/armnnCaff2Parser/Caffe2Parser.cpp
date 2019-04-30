@@ -105,7 +105,7 @@ const std::map<std::string, Caffe2ParserBase::OperationParsingFunction>
     { "MaxPool",        &Caffe2ParserBase::ParseMaxPoolingLayer},
     { "Concat",         &Caffe2ParserBase::ParseConcatLayer},
     { "Mul",            &Caffe2ParserBase::ParseMulLayer},
-    
+
     };
     
     Caffe2ParserBase::Caffe2ParserBase()
@@ -342,8 +342,8 @@ void Caffe2ParserBase::ParseInputLayer()
      const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
      IConnectableLayer* const activationLayer = m_Network->AddActivationLayer(activationDescriptor, name.c_str());
      GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(activationLayer->GetInputSlot(0));
-      activationLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
-      SetArmnnOutputSlotForCaffe2Output(op.output(0), activationLayer->GetOutputSlot(0));
+     activationLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
+     SetArmnnOutputSlotForCaffe2Output(op.output(0), activationLayer->GetOutputSlot(0));
  }
 
 
@@ -1196,7 +1196,7 @@ void Caffe2ParserBase::ParseSoftmaxLayer(const caffe2::OperatorDef& op)
 void Caffe2ParserBase::ParseSumLayer(const caffe2::OperatorDef& op)
 {
     const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
-     armnn::IConnectableLayer* newLayer =  m_Network->AddAdditionLayer(op.type().c_str());
+    armnn::IConnectableLayer* newLayer =  m_Network->AddAdditionLayer(op.type().c_str());
 
     GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(newLayer->GetInputSlot(0));
     GetArmnnOutputSlotForCaffe2Output(op.input(1)).Connect(newLayer->GetInputSlot(1));
@@ -1387,6 +1387,26 @@ void Caffe2ParserBase::ParseConcatLayer(const caffe2::OperatorDef& op)
 
 
 
+
+
+
+}
+
+
+
+
+
+void Caffe2ParserBase::ParseMulLayer(const caffe2::OperatorDef& op)
+{
+    const TensorInfo& inputInfo = GetArmnnOutputSlotForCaffe2Output(op.input(0)).GetTensorInfo();
+
+    armnn::IConnectableLayer* mulLayer =  m_Network->AddMultiplicationLayer(op.type().c_str());
+
+
+    GetArmnnOutputSlotForCaffe2Output(op.input(0)).Connect(mulLayer->GetInputSlot(0));
+    GetArmnnOutputSlotForCaffe2Output(op.input(1)).Connect(mulLayer->GetInputSlot(1));
+    mulLayer->GetOutputSlot(0).SetTensorInfo(inputInfo);
+    SetArmnnOutputSlotForCaffe2Output(op.output(0), mulLayer->GetOutputSlot(0));
 
 
 
