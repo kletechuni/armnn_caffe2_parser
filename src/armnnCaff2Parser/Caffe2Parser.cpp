@@ -104,6 +104,7 @@ const std::map<std::string, Caffe2ParserBase::OperationParsingFunction>
     { "Dropout",        &Caffe2ParserBase::ParseDropoutLayer },
     { "MaxPool",        &Caffe2ParserBase::ParseMaxPoolingLayer},
     { "Concat",         &Caffe2ParserBase::ParseConcatLayer},
+    { "Mul",            &Caffe2ParserBase::ParseMulLayer},
     
     };
     
@@ -1280,7 +1281,6 @@ void Caffe2ParserBase::ParseLRNLayer(const caffe2::OperatorDef& op)
     {
         const caffe2::Argument& a = *k3->second;
         normalizationDescriptor.m_K = boost::numeric_cast<float>(a.f());
-        
     }
      else
     {
@@ -1384,7 +1384,7 @@ void Caffe2ParserBase::ParseConcatLayer(const caffe2::OperatorDef& op)
 
     concatlayer->GetOutputSlot(0).SetTensorInfo(armnn::TensorInfo(numOfDims, mergeDimSizes.data(), DataType::Float32));
     SetArmnnOutputSlotForCaffe2Top(op.output(0), concatlayer->GetOutputSlot(0));
-    
+
 
 
 

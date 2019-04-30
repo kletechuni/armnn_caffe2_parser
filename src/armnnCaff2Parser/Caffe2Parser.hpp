@@ -52,6 +52,7 @@ namespace armnnCaffe2Parser
         void ParseDropoutLayer(const caffe2::OperatorDef& op);
         void ParseMaxPoolingLayer(const caffe2::OperatorDef& op);
         void ParseConcatLayer(const caffe2::OperatorDef& op);
+        void ParseMulLayer(const caffe2::OperatorDef& op);
 
 
 
